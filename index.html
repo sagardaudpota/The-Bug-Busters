@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScoreCast | by The Bug Busters</title>
+    <meta name="description" content="ScoreCast — live cricket scoreboard overlays and admin control, built by The Bug Busters.">
+    <meta name="theme-color" content="#070a2e">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/landing.css">
+</head>
+
+<body>
+
+    <!-- ================= LOADER ================= -->
+    <div id="loader" aria-label="Loading ScoreCast">
+        <div class="ld-grid"></div>
+        <div class="ld-inner">
+            <div class="ld-ball" id="ldBall"></div>
+            <h1 class="ld-title" id="ldTitle" aria-label="ScoreCast">
+                <span>S</span><span>C</span><span>O</span><span>R</span><span>E</span><span class="gold">C</span><span class="gold">A</span><span class="gold">S</span><span class="gold">T</span>
+            </h1>
+            <p class="ld-by" id="ldBy">A PROJECT BY <b>THE BUG BUSTERS</b></p>
+            <div class="ld-bar"><i id="ldFill"></i></div>
+            <div class="ld-pct"><span id="ldPct">0</span>%</div>
+        </div>
+        <div class="ld-curtain" id="ldCurtain"></div>
+    </div>
+
+    <!-- ================= BACKGROUND ================= -->
+    <div class="bg" aria-hidden="true">
+        <div class="bg-glow g1"></div>
+        <div class="bg-glow g2"></div>
+        <div class="bg-lines"></div>
+        <div class="bg-ball b1"></div>
+        <div class="bg-ball b2"></div>
+        <div class="bg-ball b3"></div>
+    </div>
+
+    <!-- ================= PAGE ================= -->
+    <main class="page" id="page">
+
+        <header class="nav">
+            <div class="brand"><span class="brand-dot"></span>SCORE<b>CAST</b></div>
+            <div class="nav-by">by The Bug Busters</div>
+        </header>
+
+        <section class="hero">
+            <div class="live-chip"><i></i>LIVE CRICKET BROADCAST SUITE</div>
+            <h2 class="hero-title">
+                <span class="line"><span class="word">Every&nbsp;ball.</span></span>
+                <span class="line"><span class="word gold">Every&nbsp;broadcast.</span></span>
+            </h2>
+            <p class="hero-sub">ScoreCast powers the on-screen scoreboard your viewers see and the control panel your scorer uses. Pick where you want to go.</p>
+        </section>
+
+        <section class="cards" aria-label="Choose a screen">
+
+            <!-- USER FACING -->
+            <article class="card card-user" data-tilt>
+                <div class="card-shine"></div>
+                <div class="card-top">
+                    <span class="tag">VIEWER SIDE</span>
+                    <span class="num">01</span>
+                </div>
+
+                <!-- mini scoreboard preview -->
+                <div class="preview prev-user" aria-hidden="true">
+                    <div class="mini-ticker"><em>LIVE</em><span>Toss update goes here</span></div>
+                    <div class="mini-board">
+                        <div class="mb-flag"></div>
+                        <div class="mb-core">
+                            <div class="mb-bats"><i></i><i></i></div>
+                            <div class="mb-score">12-0</div>
+                            <div class="mb-dots"><i class="six">6</i><i class="six">6</i><i></i><i></i><i></i><i></i></div>
+                        </div>
+                        <div class="mb-flag r"></div>
+                    </div>
+                </div>
+
+                <h3>User Screen</h3>
+                <p>The broadcast overlay for OBS and live streams. Animated scorecard, ticker bar, boundaries, wickets and milestones.</p>
+                <ul class="feats">
+                    <li>Live score panel</li>
+                    <li>Six, four &amp; wicket animations</li>
+                    <li>Ticker message bar</li>
+                </ul>
+                <a class="btn" href="frontend/index_blue.html" data-placeholder="user" id="linkUser">
+                    <span>Open User Screen</span>
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                </a>
+            </article>
+
+            <!-- ADMIN FACING -->
+            <article class="card card-admin" data-tilt>
+                <div class="card-shine"></div>
+                <div class="card-top">
+                    <span class="tag">SCORER SIDE</span>
+                    <span class="num">02</span>
+                </div>
+
+                <!-- mini admin preview -->
+                <div class="preview prev-admin" aria-hidden="true">
+                    <div class="mini-pad">
+                        <i>0</i><i>1</i><i>2</i><i>3</i><i class="f">4</i><i class="s">6</i><i class="w">W</i><i class="e">WD</i>
+                    </div>
+                    <div class="mini-bar"><span></span><span></span><span></span></div>
+                </div>
+
+                <h3>Admin Screen</h3>
+                <p>The control panel for the scorer. Update runs, wickets, players and overs and fire animations to the live overlay.</p>
+                <ul class="feats">
+                    <li>Ball-by-ball scoring</li>
+                    <li>Players, bowler &amp; match setup</li>
+                    <li>Trigger on-air animations</li>
+                </ul>
+                <a class="btn btn-gold" href="/admin/scorer_panel.html" data-placeholder="admin" id="linkAdmin">
+                    <span>Open Admin Screen</span>
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                </a>
+            </article>
+        </section>
+
+        <footer class="foot">
+            <span>© <span id="year"></span> ScoreCast</span>
+            <span class="sep"></span>
+            <span>Built by <b>The Bug Busters</b></span>
+        </footer>
+    </main>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="assets/landing.js"></script>
+</body>
+
+</html>

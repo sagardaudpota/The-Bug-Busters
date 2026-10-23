@@ -134,13 +134,17 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
         <button class="ex" data-extra="bye">BYE</button><button class="ex" data-extra="lbye">LEG BYE</button>
       </div>
       <button class="wk" id="bWk">WICKET</button>
+      <button class="ghost" id="bRetire" style="width:100%;margin-top:8px">Retire batter</button>
       <div class="grid g3" style="margin-top:8px">
         <button class="ghost" id="bUndo">&#8630; Undo</button><button class="ghost" id="bSwap">&#8646; Swap strike</button><button class="ghost" id="bInn">End innings</button>
       </div>
     </div>
-
     </section>
     <section data-tab="match">
+    <div class="panel hl"><p class="pt">Matches <b id="activeMatch">match_1</b></p>
+      <label>Open existing match</label><select id="matchSelect" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px 12px;color:var(--txt)"></select>
+      <div class="row2"><button class="ghost" id="bSelectMatch" style="margin-top:10px">Open selected</button><button class="go" id="bNewMatch">New match</button></div>
+    </div>
     <div class="panel"><p class="pt">Broadcast theme</p>
       <div class="themes" id="themes">
         <div class="th" data-d="green"><i style="background:linear-gradient(135deg,#0f5132,#22c55e)"></i>Green</div>
@@ -176,13 +180,14 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
   </section>
     <section data-tab="ai">
       <div class="panel hl"><p class="pt">AI Analytics <b>Powered by DeepSeek</b></p>
-        <div class="mt" style="margin-bottom:12px">Choose the analysis you want. The server sends <code style="color:var(--or2)">match_record.json</code> to DeepSeek.</div>
+        <div class="mt" style="margin-bottom:12px">Choose a report to analyze the currently selected match using its saved match JSON.</div>
         <div class="row2">
           <label class="chk"><input type="checkbox" class="aiOpt" value="player_insights">Player insights</label>
           <label class="chk"><input type="checkbox" class="aiOpt" value="turning_points">Turning points</label>
           <label class="chk"><input type="checkbox" class="aiOpt" value="chase_analysis" checked>Chase analysis</label>
           <label class="chk"><input type="checkbox" class="aiOpt" value="post_match_report">Post-match report</label></div>
         <div class="aistat"><button class="go" id="bAI">Generate reports</button><span id="aiStat"></span></div>
+        <div class="aistat"><button class="ghost" id="bAIVisibility" disabled>Show on frontend</button><span id="aiVisibilityStat">Generate a report first. Reports are hidden by default.</span></div>
       </div>
       <div id="aiOut"></div>
     </section>
@@ -194,7 +199,7 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
 
 <script>
 const API='update_score.php', GET='get_score.php';
-const AI_ENDPOINT='ai_reports.php';   // your friend's server file that calls DeepSeek (API key stays on the server)
+const AI_ENDPOINT='ai_reports.php';   // same-origin PHP endpoint; the API key stays on the server
 let S={}, busy=false, filled=false, theme='green';
 const $=id=>document.getElementById(id);
 const clean=n=>String(n||'').replace(' (out)','');
@@ -216,6 +221,13 @@ async function send(p){
 /* ---------- render ---------- */
 function render(d){
   const prev=S.team_runs; S=d;
+  const matchId=String(d.match_id||'');
+  if(lastAiMatchId&&matchId!==lastAiMatchId){$('aiOut').replaceChildren();$('aiStat').textContent=''}
+  lastAiMatchId=matchId;syncAIVisibilityControls(d);
+  if(d.ai_analysis&&$('aiOut').children.length===0){
+    const match=document.createElement('div');match.className='mt';match.textContent='Analyzed match: '+matchId;$('aiOut').appendChild(match);
+    Object.keys(AI_TITLES).forEach(k=>aiCard(AI_TITLES[k],d.ai_analysis[k],k));$('aiStat').textContent='Reports ready.';
+  }
   const sc=$('pScore'); const t=d.team_runs+'/'+d.team_wickets;
   if(sc.textContent!==t){sc.textContent=t;sc.classList.remove('pop');void sc.offsetWidth;sc.classList.add('pop')}
   $('pTeam').textContent=d.team;$('pOpp').textContent=d.opponent;
@@ -239,12 +251,25 @@ function render(d){
     $('iOvers').value=d.max_overs||'';$('iTarget').value=d.target||0}
 }
 async function refresh(){
-  try{const r=await fetch(GET+'?_='+Date.now(),{cache:'no-store'});render(await r.json());
+  try{
+    const stamp=Date.now();const [r,aiR]=await Promise.all([fetch(GET+'?_='+stamp,{cache:'no-store'}),fetch('get_ai_status.php?_='+stamp,{cache:'no-store'})]);
+    const d=await r.json();if(aiR.ok){const ai=await aiR.json();if(ai.match_id===d.match_id)Object.assign(d,ai)}render(d);
     $('dot').className='dot';$('liveTxt').textContent='LIVE';$('cConn').textContent='\u2022 CONNECTED';
     $('pSync').textContent=new Date().toLocaleTimeString()}
   catch(e){$('dot').className='dot off';$('liveTxt').textContent='OFFLINE';$('cConn').textContent='\u2022 OFFLINE'}
 }
 setInterval(()=>{if(!busy)refresh()},3000);
+async function loadMatches(){
+  try{
+    const r=await fetch(API,{method:'POST',body:new URLSearchParams({list_matches:'1'})});
+    const d=await r.json(); const select=$('matchSelect'); select.innerHTML='';
+    d.matches.forEach(m=>{const o=document.createElement('option');o.value=m.id;o.textContent=m.id+' · '+(m.team||'TeamA')+' vs '+(m.opponent||'TeamB');select.appendChild(o)});
+    select.value=d.active; $('activeMatch').textContent=d.active;
+  }catch(e){toast('Could not load matches',false)}
+}
+$('bNewMatch').onclick=async()=>{const r=await fetch(API,{method:'POST',body:new URLSearchParams({create_match:'1'})});toast(await r.text(),r.ok);await loadMatches();filled=false;await refresh()};
+$('bSelectMatch').onclick=async()=>{const r=await fetch(API,{method:'POST',body:new URLSearchParams({select_match:$('matchSelect').value})});toast(await r.text(),r.ok);await loadMatches();filled=false;await refresh()};
+loadMatches();
 
 /* ---------- sheets ---------- */
 const openSheet=h=>{$('sheet').innerHTML=h;$('veil').classList.add('open')};
@@ -270,10 +295,29 @@ function openExtra(t){
 function openWicket(){
   openSheet('<p class="pt">Wicket</p><label>Who is out?</label>'+
     pick('who',['1','2'],[esc(clean(S.striker))+' (striker)',esc(clean(S.non_striker))+' (non-striker)'],'1','row2')+
+    '<label>Dismissal</label><select id="wicketType" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--txt)"><option value="bowled">Bowled</option><option value="caught">Caught</option><option value="lbw">LBW</option><option value="runout">Run out</option><option value="stumped">Stumped</option></select>'+
+    '<label>Fielder (required for caught, run out and stumped)</label><input type="text" id="fielder" maxlength="40" placeholder="Fielder name">'+
+    '<label>DRS decision (if reviewed)</label><select id="reviewResult" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--txt)"><option value="">No review</option><option value="out">Out · upheld</option><option value="notout">Not out · overturned</option></select>'+
+    '<div class="mt" style="margin-top:8px">Duck animations are automatic. A golden duck means out for zero on the first ball faced.</div>'+
+    '<label>Incoming batter</label><input type="text" id="newBatter" maxlength="40" placeholder="Required unless this is the tenth wicket">'+
     '<label>Runs completed first</label>'+pick('wr',['0','1','2','3'],['0','1','2','3'],'0','g4')+
     '<button class="go red" id="sGo">Confirm wicket</button><button class="ghost" id="sX" style="width:100%;margin-top:8px">Cancel</button>');
   bindPicks();$('sX').onclick=closeSheet;
-  $('sGo').onclick=()=>{const w=val('who'),r=val('wr');closeSheet();send({live_event:'wicket:'+w+(r!=='0'?'+'+r:'')})};
+  const wicketType=$('wicketType');
+  const syncDismissal=()=>{const nonStriker=val('who')==='2';Array.from(wicketType.options).forEach(o=>o.disabled=nonStriker&&o.value!=='runout');if(nonStriker)wicketType.value='runout';syncCompletedRuns()};
+  const fielderNeeded=()=>['caught','runout','stumped'].includes(wicketType.value);
+  const syncCompletedRuns=()=>{const isRunOut=wicketType.value==='runout';$('fielder').required=fielderNeeded();$('fielder').style.display=fielderNeeded()?'':'none';document.querySelectorAll('[data-pick="wr"] .opt').forEach(b=>b.disabled=!isRunOut&&b.dataset.v!=='0');if(!isRunOut)document.querySelector('[data-pick="wr"]').dataset.value='0';};
+  document.querySelector('[data-pick="who"]').addEventListener('click',syncDismissal);
+  wicketType.onchange=syncCompletedRuns;syncCompletedRuns();
+  $('newBatter').required=S.team_wickets<9;
+  $('sGo').onclick=()=>{const w=val('who'),r=val('wr'),newBatter=$('newBatter').value.trim(),fielder=$('fielder').value.trim();if(S.team_wickets<9&&!newBatter)return toast('Enter the incoming batter',false);if(fielderNeeded()&&!fielder)return toast('Enter the fielder name',false);closeSheet();send({live_event:'wicket:'+w+(r!=='0'?'+'+r:''),dismissal_type:wicketType.value,review_result:$('reviewResult').value,new_batter:newBatter,fielder})};
+}
+function openRetire(){
+  openSheet('<p class="pt">Retire batter out</p><label>Choose batter</label>'+pick('retireWho',['1','2'],[esc(clean(S.striker))+' (striker)',esc(clean(S.non_striker))+' (non-striker)'],'1','row2')+
+    '<label>Incoming batter</label><input type="text" id="retireNewBatter" maxlength="40" placeholder="Required unless this is the tenth wicket">'+
+    '<div class="mt" style="margin-top:8px">Retired out counts as a wicket; no delivery is added.</div><button class="go red" id="retireGo">Confirm retired out</button><button class="ghost" id="retireX" style="width:100%;margin-top:8px">Cancel</button>');
+  bindPicks();$('retireX').onclick=closeSheet;
+  $('retireGo').onclick=()=>{const newBatter=$('retireNewBatter').value.trim();if(S.team_wickets<9&&!newBatter)return toast('Enter the incoming batter',false);closeSheet();send({retire_batter:'1',batter_slot:val('retireWho'),new_batter:newBatter})};
 }
 
 /* ---------- navigation ---------- */
@@ -288,35 +332,61 @@ show(location.hash.slice(1)||'score');
 
 /* ---------- AI analytics ---------- */
 const AI_TITLES={player_insights:'Player insights',turning_points:'Turning points',chase_analysis:'Chase analysis',post_match_report:'Post-match report'};
-function aiCard(title,text){
+let lastAiMatchId='';
+function syncAIVisibilityControls(d){
+  const available=!!(d&&d.ai_analysis&&typeof d.ai_analysis==='object');
+  const visible=d&&d.ai_analysis_visible===true;
+  $('bAIVisibility').disabled=!available||busy;
+  $('bAIVisibility').textContent=visible?'Hide from frontend':'Show on frontend';
+  $('aiVisibilityStat').textContent=!available?'Generate a report first. Reports are hidden by default.':(visible?'Visible on frontend.':'Report ready · hidden by default.');
+}
+function aiCard(title,report,key){
+  if(!report||!report.selected)return;
   const d=document.createElement('div');d.className='rep';
-  const h=document.createElement('h4');h.textContent=title;const p=document.createElement('pre');p.textContent=text;
-  d.append(h,p);$('aiOut').appendChild(d);
+  const h=document.createElement('h4');h.textContent=title;d.append(h);
+  const add=(text,tag='p')=>{if(!text)return;const e=document.createElement(tag);e.textContent=text;d.append(e)};
+  if(report.headline)add(report.headline,'strong');
+  add(report.summary);
+  if(key==='chase_analysis'){
+    add('Current run rate: '+(report.current_run_rate||'—')+' · Required run rate: '+(report.required_run_rate||'—'));
+    add(report.assessment);
+  }
+  const items=key==='post_match_report'?report.key_takeaways:report.items;
+  if(Array.isArray(items)&&items.length){const ul=document.createElement('ul');items.forEach(item=>{const li=document.createElement('li');li.textContent=typeof item==='string'?item:[item.title||item.over||item.event,item.detail,item.impact].filter(Boolean).join(': ');ul.append(li)});d.append(ul)}
+  $('aiOut').appendChild(d);
 }
 async function genAI(){
   const picks=[...document.querySelectorAll('.aiOpt:checked')].map(c=>c.value);
   if(!picks.length)return toast('Choose at least one report',false);
   const btn=$('bAI');btn.disabled=true;$('aiStat').textContent='Generating\u2026';$('aiOut').innerHTML='';
   try{
-    const body=new URLSearchParams();picks.forEach(p=>body.append('reports[]',p));
-    const r=await fetch(AI_ENDPOINT,{method:'POST',body});const txt=await r.text();
-    if(!r.ok)throw new Error('Server returned '+r.status);
-    let j=null;try{j=JSON.parse(txt)}catch(e){}
-    const reps=j&&(j.reports||j);
-    if(reps&&typeof reps==='object'){
-      picks.forEach(k=>{if(reps[k]!==undefined)aiCard(AI_TITLES[k],typeof reps[k]==='string'?reps[k]:JSON.stringify(reps[k],null,2))});
-      if(!$('aiOut').children.length)aiCard('AI response',JSON.stringify(reps,null,2));
-    }else aiCard('AI response',txt);
+    const r=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reports:picks,match_id:S.match_id})});
+    const data=await r.json();if(!r.ok)throw new Error(data.error||'Server returned '+r.status);
+    if(data.match_id!==S.match_id)throw new Error('The selected match changed. Refresh and check its saved report.');
+    $('aiOut').replaceChildren();
+    S.ai_analysis=data;S.ai_analysis_visible=false;syncAIVisibilityControls(S);
+    const match=document.createElement('div');match.className='mt';match.textContent='Analyzed match: '+(data.match_id||'active match');$('aiOut').appendChild(match);
+    picks.forEach(k=>aiCard(AI_TITLES[k],data[k],k));
     $('aiStat').textContent='Reports ready.';
   }catch(e){$('aiStat').textContent='Failed: '+e.message;toast('AI request failed',false)}
   finally{btn.disabled=false}
 }
 $('bAI').onclick=genAI;
+$('bAIVisibility').onclick=async()=>{
+  if(!S.match_id||!S.ai_analysis)return;
+  const visible=S.ai_analysis_visible!==true;const btn=$('bAIVisibility');btn.disabled=true;
+  try{
+    const r=await fetch('ai_publish.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_id:S.match_id,visible})});
+    const result=await r.json();if(!r.ok)throw new Error(result.error||'Could not update frontend visibility.');
+    S.ai_analysis_visible=result.visible===true;syncAIVisibilityControls(S);toast(S.ai_analysis_visible?'AI analysis is visible on frontend.':'AI analysis hidden from frontend.');
+  }catch(e){syncAIVisibilityControls(S);toast(e.message,false)}
+};
 
 /* ---------- wiring ---------- */
 document.querySelectorAll('[data-ev]').forEach(b=>b.onclick=()=>send({live_event:b.dataset.ev}));
 document.querySelectorAll('[data-extra]').forEach(b=>b.onclick=()=>openExtra(b.dataset.extra));
 $('bWk').onclick=openWicket;
+$('bRetire').onclick=openRetire;
 $('bUndo').onclick=()=>send({undo:'1'});
 $('bSwap').onclick=()=>send({swap:'1'});
 $('bInn').onclick=()=>{if(confirm('End this innings and start the next one?'))send({change_inning:'1'})};

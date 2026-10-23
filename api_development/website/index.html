@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cricket AI Match Reports</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f8; }
+    .report-card { white-space: pre-wrap; }
+    #error { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<main class="container py-4" style="max-width: 900px">
+  <h1 class="h3 mb-1">Cricket AI Match Reports</h1>
+  <p class="text-secondary">Choose the analysis you want. The server sends <code>match_record.json</code> to DeepSeek.</p>
+  <div id="server-notice" class="alert alert-warning d-none" role="alert">This page is open as a local file. PHP requests only work when it is served over HTTP. Start the local server with <code>start_server.bat</code>, then open <code>http://127.0.0.1:8000/website/</code>.</div>
+  <form id="analysis-form" class="card card-body mb-4">
+    <div class="row g-2">
+      <div class="col-sm-6"><label class="form-check"><input class="form-check-input" type="checkbox" name="report" value="player_insights" checked> <span class="form-check-label">Player insights</span></label></div>
+      <div class="col-sm-6"><label class="form-check"><input class="form-check-input" type="checkbox" name="report" value="turning_points" checked> <span class="form-check-label">Turning points</span></label></div>
+      <div class="col-sm-6"><label class="form-check"><input class="form-check-input" type="checkbox" name="report" value="chase_analysis" checked> <span class="form-check-label">Chase analysis</span></label></div>
+      <div class="col-sm-6"><label class="form-check"><input class="form-check-input" type="checkbox" name="report" value="post_match_report"> <span class="form-check-label">Post-match report</span></label></div>
+    </div>
+    <div class="mt-3 d-flex align-items-center gap-3">
+      <button id="submit" class="btn btn-primary" type="submit">Generate reports</button>
+      <span id="status" class="small text-secondary" role="status"></span>
+    </div>
+  </form>
+  <div id="error" class="alert alert-danger d-none" role="alert"></div>
+  <section id="results" class="d-grid gap-3" aria-live="polite"></section>
+</main>
+<script>
+const form = document.querySelector('#analysis-form');
+const results = document.querySelector('#results');
+const statusText = document.querySelector('#status');
+const errorBox = document.querySelector('#error');
+const button = document.querySelector('#submit');
+const serverNotice = document.querySelector('#server-notice');
+
+if (location.protocol === 'file:') {
+  serverNotice.classList.remove('d-none');
+  button.disabled = true;
+}
+
+function addText(parent, tag, text, className = '') {
+  const node = document.createElement(tag);
+  node.className = className;
+  node.textContent = text || '';
+  parent.append(node);
+  return node;
+}
+
+function renderReport(title, report, kind) {
+  if (!report?.selected) return;
+  const card = document.createElement('article');
+  card.className = 'card report-card';
+  const body = document.createElement('div');
+  body.className = 'card-body';
+  addText(body, 'h2', title, 'h5 card-title');
+  if (report.headline) addText(body, 'h3', report.headline, 'h6 fw-semibold');
+  if (report.summary) addText(body, 'p', report.summary, 'mb-2');
+  if (kind === 'chase_analysis') {
+    addText(body, 'p', `Current run rate: ${report.current_run_rate || '—'} | Required run rate: ${report.required_run_rate || '—'}`, 'mb-1');
+    if (report.assessment) addText(body, 'p', `Assessment: ${report.assessment}`, 'mb-0');
+  }
+  const items = kind === 'post_match_report' ? report.key_takeaways : report.items;
+  if (Array.isArray(items) && items.length) {
+    const list = document.createElement('ul'); list.className = 'mb-0 mt-2';
+    items.forEach(item => {
+      const li = document.createElement('li');
+      if (typeof item === 'string') li.textContent = item;
+      else {
+        const lead = item.title || item.over || item.event || 'Detail';
+        li.textContent = [lead, item.detail, item.impact].filter(Boolean).join(': ');
+      }
+      list.append(li);
+    });
+    body.append(list);
+  }
+  card.append(body); results.append(card);
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const reports = [...form.querySelectorAll('input[name="report"]:checked')].map(input => input.value);
+  results.replaceChildren(); errorBox.classList.add('d-none');
+  if (!reports.length) { errorBox.textContent = 'Select at least one report.'; errorBox.classList.remove('d-none'); return; }
+  button.disabled = true; statusText.textContent = 'Contacting DeepSeek…';
+  try {
+    const response = await fetch('../api/analyze.php', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reports})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+    addText(results, 'p', `Match: ${data.match_id}`, 'small text-secondary mb-0');
+    renderReport('Player insights', data.player_insights, 'player_insights');
+    renderReport('Turning points', data.turning_points, 'turning_points');
+    renderReport('Chase analysis', data.chase_analysis, 'chase_analysis');
+    renderReport('Post-match report', data.post_match_report, 'post_match_report');
+    statusText.textContent = 'Reports ready.';
+  } catch (error) {
+    errorBox.textContent = error.message; errorBox.classList.remove('d-none'); statusText.textContent = '';
+  } finally { button.disabled = false; }
+});
+</script>
+</body>
+</html>
