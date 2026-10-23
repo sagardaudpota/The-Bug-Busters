@@ -1,198 +1,146 @@
-# ScoreCast
+# Score Cast
 
-**ScoreCast** is a live cricket broadcast scoring suite built by **The Bug Busters**. It combines a landing page, a viewer-facing scoreboard overlay, a scorer control panel, match data and optional AI-generated match reports. The overlay is designed for use in OBS and other streaming/broadcast software as a browser source.
+**Score Cast** is a cricket scoring and broadcast suite by **The Bug Busters**. It combines a scorer panel, live scoreboard overlay, and optional AI match reports for community matches.
 
-## Team
+## Project and team
 
-| Name | GitHub |
+| Team member | GitHub |
 | --- | --- |
-| Muhammad Zaid | [@ZAIDDIV](https://github.com/ZAIDDIV) |
 | Sagar Habib | [@sagardaudpota](https://github.com/sagardaudpota) |
-| Suleman Memon | [@sulemanbuilds](https://github.com/sulemanbuilds) |
+| Muhammad Zaid | [@ZAIDDIV](https://github.com/ZAIDDIV) |
+| Muhammad Suleman Memon | [@sulemanbuilds](https://github.com/sulemanbuilds) |
 
-## Contents
+## Theme and community problem
 
-- [What ScoreCast does](#what-scorecast-does)
-- [How the parts work together](#how-the-parts-work-together)
-- [Repository guide](#repository-guide)
-- [Requirements](#requirements)
-- [Run locally with XAMPP](#run-locally-with-xampp)
-- [Using the scorer and overlay](#using-the-scorer-and-overlay)
-- [Match data and persistence](#match-data-and-persistence)
-- [Optional AI match reports](#optional-ai-match-reports)
-- [Development AI demo](#development-ai-demo)
-- [Customization](#customization)
-- [Troubleshooting](#troubleshooting)
-- [Security notes](#security-notes)
+**Theme: Public Services.** Local cricket often lacks accessible broadcast scoring, making it harder for spectators and remote viewers to follow. Score Cast provides a live scoreboard and uses AI to turn match data into readable insights for the community.
 
-## What ScoreCast does
+## Screenshots
+
+These screenshots provide a quick look at the project:
+
+| Score Cast screenshot 1 | Score Cast screenshot 2 |
+| --- | --- |
+| ![Score Cast screenshot 1](sc-1.png) | ![Score Cast screenshot 2](sc-2.png) |
+
+## Live deployment and demo
+
+- **Live project:** [scorecast.sulemanbuilds.com](https://scorecast.sulemanbuilds.com)
+- **Demo video:** [Watch the Score Cast demo](https://drive.google.com/drive/folders/1I_YvGNYQrB6KTJGU-vUqgijTUY6IO2Wh?usp=sharing)
+
+## What the project includes
 
 ### Landing page
 
-The root [`index.html`](index.html) is the project home page. It introduces the broadcast suite and links to the scorer and viewer screens. [`assets/landing.css`](assets/landing.css) contains its visual design; [`assets/landing.js`](assets/landing.js) controls the loading sequence, animations, and interaction. The page loads GSAP from a CDN for animation effects.
+Root [`index.html`](index.html) links to the scorer and viewer screens. Its styles and animations are in [`assets/landing.css`](assets/landing.css) and [`assets/landing.js`](assets/landing.js).
 
-### Viewer screen / broadcast overlay
+### Scorer panel
 
-[`frontend/index_blue.html`](frontend/index_blue.html) is the blue live scoreboard. Add it to OBS as a Browser Source (served from the PHP web server). The overlay presents the batting score, wickets, innings/phase, overs, batter and bowler details, recent balls, flags, ticker messages, and match venue. It can animate scoring events such as boundaries, wickets, milestones, and other match events. Published AI insights can also appear on the overlay.
+[`admin/scorer_panel.html`](admin/scorer_panel.html) handles match/player setup, ball-by-ball scoring, batter/bowler updates, undo, innings controls, and AI Analytics. It communicates with PHP endpoints in `admin/`.
 
-The alternate [`frontend/index_blue_need.html`](frontend/index_blue_need.html) is a chase/required-runs presentation variant. Both use [`frontend/assets/style.css`](frontend/assets/style.css) and [`frontend/assets/script.js`](frontend/assets/script.js). Image assets (logo, flags, default player image) are in [`frontend/assets/images/`](frontend/assets/images/).
+### Viewer scoreboard overlay
 
-The overlay script exposes a browser-side `Score` helper API for demos and manual triggering, and supports `ticker` and `opp` URL parameters. Its live score state is normally obtained from the PHP endpoints and the active match record; a PHP server is required for that integration.
+[`frontend/index_blue.html`](frontend/index_blue.html) is the live overlay for browsers and OBS. It shows score, players, overs, recent balls, ticker, and match details with event animations. [`frontend/index_blue_need.html`](frontend/index_blue_need.html) is the alternate chase view; logic, styles, and images live in [`frontend/assets/`](frontend/assets/).
 
-### Scorer control panel
+### Match management and API
 
-[`admin/scorer_panel.html`](admin/scorer_panel.html) is the scorer interface. Its tabs and controls support ball-by-ball scoring, match and player setup, editing striker/non-striker/bowler and match details, undo and match state/innings controls, visual branding/theme controls, and AI Analytics. Scoring updates are sent to [`admin/update_score.php`](admin/update_score.php), and the active scoreboard data is read from [`admin/get_score.php`](admin/get_score.php).
+PHP endpoints read and update JSON records in [`admin/matches/`](admin/matches/). `active_match.json` selects the current match; `update_score.php` saves changes and `get_score.php` serves the overlay. Other endpoints generate and publish AI reports.
 
-The panel has no login or authorization layer currently. Anyone who can access the scorer page and its update endpoint can change the score. Keep it on a trusted network or add authentication and access restrictions before exposing it publicly.
+## How AI is used
 
-### Optional AI reports
+- **Model/API:** DeepSeek `deepseek-flash`, called through the DeepSeek Chat Completions API (`https://api.deepseek.com/chat/completions`).
+- **Input:** The server reads the selected match's JSON record. This includes available match details and structured score data such as teams, innings, runs, wickets, overs, batter/bowler figures, and ball-by-ball events. The scorer selects one or more report types to request.
+- **Output:** The API returns structured text reports for **player insights**, **turning points**, **chase analysis**, and **post-match reports**. The live integration saves generated reports with that match. They remain hidden from the public overlay until the scorer explicitly publishes them.
+- **Credential handling:** The API key belongs in the server-only `admin/private/deepseek_config.php` file, which is excluded by `.gitignore`. It must not be put in browser JavaScript, HTML, or match data.
 
-The admin AI Analytics tools can request player insights, turning points, chase analysis, and a post-match report from DeepSeek. Reports are stored in the selected match record and are hidden from viewers until explicitly published in the admin panel. The overlay checks the published state and displays the report when enabled.
+AI summaries make match data easier to share. Scorers should review reports before publishing.
 
-## How the parts work together
+## Tech stack
 
-1. A scorer opens the admin panel and selects or creates a match.
-2. The panel submits score and match changes to PHP endpoints under `admin/`.
-3. PHP validates and writes the active match JSON file. Updates use a file lock and atomic replacement to reduce partial writes and collisions.
-4. The overlay polls the score endpoint and updates its display/animations from the latest match state.
-5. If configured, AI reports are generated server-side. The admin chooses whether to publish them to the viewer overlay.
+- **Frontend:** HTML5, CSS3, and vanilla JavaScript.
+- **Animation and presentation:** GSAP 3.12.5, Barlow and Barlow Condensed fonts; the standalone AI demo page also uses Bootstrap 5.3.3.
+- **Backend:** PHP with JSON HTTP endpoints and cURL for the DeepSeek API call.
+- **Storage:** JSON files for active match selection, match records, and undo snapshots.
+- **Broadcast use:** Browser-based scoreboard overlay designed to fit a 1920×1080 stage and scale to the browser viewport; usable as an OBS Browser Source.
 
-All parts should be served from the same PHP site origin for the provided relative endpoint paths to work.
+There is no Node/npm build process or Composer dependency setup in this repository.
 
-## Repository guide
+## Run locally
+
+### Requirements
+
+- XAMPP (or another local Apache/PHP server).
+- PHP with JSON support. PHP cURL is required for AI reports.
+- A modern browser. Internet access is needed for the external fonts, GSAP, and optional AI API calls.
+
+### Setup
+
+1. Clone or copy this repository into your web server document root, for example `C:\xampp\htdocs\the-bug-busters`.
+2. Start Apache in the XAMPP Control Panel.
+3. Open the landing page at `http://localhost/the-bug-busters/`.
+4. Open the scorer at `http://localhost/the-bug-busters/admin/scorer_panel.html`.
+5. Open the overlay at `http://localhost/the-bug-busters/frontend/index_blue.html`. For OBS, add this URL as a Browser Source and set the source dimensions to your broadcast output.
+6. Create or select a match in the scorer, set the teams and player details, and enter deliveries. Keep the overlay open to see the current match display.
+
+Serve the app over HTTP through Apache rather than opening the HTML files directly with `file://`; browser file mode cannot use the PHP endpoints. PHP needs write access to `admin/matches/` and the score lock file for live scoring.
+
+### Optional: configure AI reports
+
+1. Copy [`admin/private/deepseek_config.example.php`](admin/private/deepseek_config.example.php) to `admin/private/deepseek_config.php`.
+2. Add your DeepSeek API key to the local server config. Keep the real config out of source control.
+3. Ensure the PHP cURL extension and outbound HTTPS requests are available.
+4. In the scorer panel's AI Analytics section, select the report types and request analysis. Review the report and use the publish control when you want it shown on the overlay.
+
+The separate [`api_development/`](api_development/) directory contains a sample AI reports page and API that analyze `match_record.json`. On Windows, `api_development/start_server.bat` launches PHP's built-in server at `http://127.0.0.1:8000/website/`; update its PHP executable path if your XAMPP installation differs. This demo API is separate from the live match workflow.
+
+## Data, models, and resources
+
+- **Match data:** Live match records are JSON files in `admin/matches/`. `api_development/` contains sample match, score, and player data for the separate demo; these are project samples, not an external dataset.
+- **AI model:** DeepSeek `deepseek-flash`, accessed through the DeepSeek API. The model analyzes the match record supplied by the backend; no model weights are bundled in this repository.
+- **Animation library:** GSAP 3.12.5, loaded from cdnjs.
+- **Fonts:** Barlow and Barlow Condensed via Google Fonts; the scorer panel also requests JetBrains Mono and Space Grotesk.
+- **Demo-page styling:** Bootstrap 5.3.3 via jsDelivr on the standalone development AI page.
+- **Project imagery:** The logo, team flags, and default player image under `frontend/assets/images/` are local project assets.
+
+Third-party libraries and services belong to their authors/providers. No external training dataset or model weights are bundled. Credit any additional assets or datasets the team adds.
+
+## Repository map
 
 ```text
 .
-├── index.html                         Project landing page
+├── index.html                         Landing page
+├── README.md                          Project documentation
+├── sc-1.png, sc-2.png                 README screenshots
 ├── assets/
-│   ├── landing.css                    Landing page styles
-│   └── landing.js                     Landing page loader and interactions
+│   ├── landing.css                    Landing page styling
+│   └── landing.js                     Landing animation and interactions
 ├── frontend/
-│   ├── index_blue.html                Blue live scoreboard overlay
-│   ├── index_blue_need.html           Chase/required-runs overlay variant
+│   ├── index_blue.html                Main live scoreboard overlay
+│   ├── index_blue_need.html           Alternate chase overlay
 │   └── assets/
-│       ├── style.css                  Overlay styles and animations
-│       ├── script.js                  Overlay rendering, polling, and events
-│       └── images/                    Logo, team flags, default player image
+│       ├── style.css                  Scoreboard appearance and animations
+│       ├── script.js                  Overlay state, rendering, and events
+│       └── images/                    Logo, flags, and default player image
 ├── admin/
 │   ├── scorer_panel.html              Scorer control panel
-│   ├── overlay.html                   Standalone/demo overlay page
-│   ├── update_score.php               Score and match update actions
-│   ├── get_score.php                  Reads the active match for the overlay
-│   ├── score_data.json                Legacy/demo score data
-│   ├── score_undo.json                Legacy/demo undo data
-│   ├── score.lock                     Runtime file lock (created/used by PHP)
-│   ├── matches/
-│   │   ├── active_match.json          Selects the active match
-│   │   ├── match_*.json               Individual match records
-│   │   └── match_*_undo.json          Per-match undo snapshots
-│   ├── ai_reports.php                 Generates selected AI reports
-│   ├── ai_publish.php                 Publishes/hides a saved AI report
-│   ├── get_ai_status.php              Returns saved report and visibility status
-│   ├── deepseek_client.php            Server-side DeepSeek request helper
-│   └── private/
-│       ├── deepseek_config.example.php Example configuration template
-│       └── deepseek_config.php        Local secret configuration (create yourself)
+│   ├── update_score.php               Score/match updates
+│   ├── get_score.php                  Active match data for the overlay
+│   ├── ai_reports.php                 Generate AI reports for active match
+│   ├── ai_publish.php                 Publish or hide saved AI report
+│   ├── get_ai_status.php              Read report and visibility state
+│   ├── deepseek_client.php            DeepSeek API client
+│   ├── private/                      Local server config template and secret
+│   └── matches/                       Active match, match JSON, undo data
 └── api_development/
-    ├── website/index.html             Standalone AI report demo page
-    ├── api/analyze.php                Demo API endpoint using match_record.json
-    ├── api/deepseek_client.php        AI request helper for the demo API
-    ├── match_record.json              Sample match input for the demo
-    ├── players_data.json              Sample player data
-    ├── score_data.json                Sample score data
-    └── start_server.bat               Starts PHP's local development server
+    ├── website/index.html             Standalone AI report demo
+    ├── api/analyze.php                Demo analysis endpoint
+    ├── api/deepseek_client.php        DeepSeek API client for demo
+    ├── match_record.json              Demo match input
+    ├── players_data.json              Demo player data
+    ├── score_data.json                Demo score data
+    └── start_server.bat               Starts local PHP test server
 ```
 
-Other tracked files include [`admin/README.txt`](admin/README.txt), which has older deployment notes, and [`admin/score-panel.zip`](admin/score-panel.zip), a packaged copy of the score panel. The source files in `admin/` are the editable working version.
+## Security
 
-### Endpoint reference
+Scorer endpoints currently have no authentication; restrict access before public use. Deploy over HTTPS and keep API keys in the ignored server-side config. See [`admin/README.txt`](admin/README.txt) for legacy setup notes.
 
-| Endpoint | Purpose |
-| --- | --- |
-| `admin/get_score.php` | Returns the selected active match as JSON for the overlay. Hides AI report content unless it is published. |
-| `admin/update_score.php` | Handles score taps and match/player/state update actions from the scorer panel. |
-| `admin/ai_reports.php` | Accepts a POST request for one or more supported AI report types, analyzes the currently selected match, and saves the result. |
-| `admin/ai_publish.php` | Accepts a POST request to show or hide the saved report for the active match. |
-| `admin/get_ai_status.php` | Returns the saved report, generated time, and visibility state for the admin panel. |
-| `api_development/api/analyze.php` | Standalone development/demo endpoint that analyzes `api_development/match_record.json`. |
-
-## Requirements
-
-- Windows with [XAMPP](https://www.apachefriends.org/) or another web server capable of running PHP.
-- PHP with JSON support. Enable the PHP cURL extension and outbound HTTPS for DeepSeek AI reports.
-- A modern browser. Internet access is needed for externally hosted fonts, GSAP, and (in the development AI demo) Bootstrap CDN assets.
-- Writable access for PHP to the relevant JSON files and directories under `admin/matches/`, plus the lock file location.
-
-The project does not have a Node/npm build step or Composer dependencies in the current repository.
-
-## Run locally with XAMPP
-
-1. Copy or clone this repository into your XAMPP web root, commonly `C:\xampp\htdocs\the-bug-busters` (adjust for your installation).
-2. Start Apache from the XAMPP Control Panel.
-3. Open the landing page at `http://localhost/the-bug-busters/`.
-4. Open the scorer at `http://localhost/the-bug-busters/admin/scorer_panel.html`.
-5. Open the broadcast overlay at `http://localhost/the-bug-busters/frontend/index_blue.html`.
-6. In OBS, add a Browser Source using that overlay URL. Set the source dimensions to the intended broadcast layout; the overlay scales its 1920×1080 stage to fit the browser viewport.
-
-Use the app through `http://localhost/...`, not by opening the HTML files directly with `file://`. Direct-file mode cannot call the PHP endpoints. For a hosted deployment, use HTTPS, preserve the directory structure, and ensure the PHP account can write match state files.
-
-## Using the scorer and overlay
-
-- Select or create a match in the match/player controls. The selected match is recorded in `admin/matches/active_match.json`.
-- Enter teams, venue, players, and bowler details, then score each delivery using the scoring controls.
-- Use the panel's undo and innings/state controls to correct or manage the match.
-- Keep the overlay URL open in OBS or a browser. It refreshes from the active match data and renders the current score and event effects.
-- The standalone [`admin/overlay.html`](admin/overlay.html) is a demo/legacy overlay page; the landing page's viewer link points to `frontend/index_blue.html`.
-
-## Match data and persistence
-
-Each match is represented by a JSON file in `admin/matches/`, generally named `match_1.json`, `match_2.json`, and so on. `active_match.json` identifies which match the admin and overlay currently use. Undo history is stored in a companion `match_*_undo.json` file. The application also maintains revision/event metadata in match records so the viewer can synchronize score changes and effects.
-
-`admin/score_data.json` and `admin/score_undo.json` are older data files retained in the repository; the current multi-match flow uses the `admin/matches/` directory. `api_development/score_data.json`, `players_data.json`, and `match_record.json` are sample inputs for the separate development demo.
-
-Back up the `admin/matches/` directory before replacing or cleaning match data. Do not edit a live match JSON file while a scorer is actively updating it.
-
-## Optional AI match reports
-
-1. Copy `admin/private/deepseek_config.example.php` to `admin/private/deepseek_config.php`.
-2. Put your DeepSeek API key in the local config file. The real config filename is listed in `.gitignore`; do not commit it or put the key in HTML, JavaScript, or match JSON.
-3. Confirm PHP cURL is enabled, outbound HTTPS is allowed, and the site is served over HTTPS in production.
-4. Open the scorer panel, select the active match, and use the AI Analytics tab to request one or more report types.
-5. Review the generated report. Use the panel's publish/show control to make it visible on the overlay; hide it again when needed.
-
-The analysis endpoint sends match data from the server to DeepSeek. Check your provider's current data handling terms before using real player or match information. Treat any API key previously committed, shared, or embedded in a file as compromised and rotate it. Keep the example file to a placeholder value only.
-
-## Development AI demo
-
-`api_development/` contains an independent sample page and API flow. It uses `match_record.json` instead of the live admin match selection.
-
-- Start it using `api_development/start_server.bat` on Windows with XAMPP installed at the path configured in the batch file. If your PHP executable is elsewhere, edit the `PHP_EXE` setting.
-- The script starts PHP's built-in server at `http://127.0.0.1:8000` and opens `http://127.0.0.1:8000/website/`.
-- Configure the API key for the demo in the appropriate server-side development configuration used by [`api_development/api/deepseek_client.php`](api_development/api/deepseek_client.php).
-- Choose reports on the demo page and submit them to `api/analyze.php`.
-
-This is a test/demo path separate from the live scorer-integrated AI reports in `admin/`.
-
-## Customization
-
-- Landing content and navigation: [`index.html`](index.html).
-- Landing visual style and motion: [`assets/landing.css`](assets/landing.css), [`assets/landing.js`](assets/landing.js).
-- Overlay layout and theme: [`frontend/index_blue.html`](frontend/index_blue.html), [`frontend/assets/style.css`](frontend/assets/style.css).
-- Overlay scoring state, display rendering, polling, and event behavior: [`frontend/assets/script.js`](frontend/assets/script.js).
-- Team branding and default imagery: replace the corresponding assets in [`frontend/assets/images/`](frontend/assets/images/).
-- Scorer layout and controls: [`admin/scorer_panel.html`](admin/scorer_panel.html).
-- Server-side score and report behavior: PHP files in [`admin/`](admin/).
-
-The landing page currently links directly to the blue user screen and scorer page. Update those anchors in `index.html` if the paths change.
-
-## Troubleshooting
-
-- **Page opens but score does not update:** confirm Apache/PHP is running, use the site through localhost HTTP, and verify `admin/matches/active_match.json` points to an existing match JSON file.
-- **PHP cannot save a score:** check that Apache's PHP process has write access to `admin/matches/` and can create/use `admin/score.lock`.
-- **AI report request fails:** verify the server-side config exists, its key is valid, PHP cURL is enabled, outbound HTTPS is available, and consult the PHP error log for server-side details.
-- **Overlay does not fit the OBS source:** set the Browser Source dimensions to the desired output and refresh the source.
-- **Buttons or fonts look unstyled:** confirm external CDN access for GSAP/fonts and inspect the browser console for missing files or script errors.
-
-## Security notes
-
-The current scorer endpoints do not require a user account or login, so they should not be exposed to an untrusted public audience without adding authentication and suitable server access controls. Keep API credentials server-side, use HTTPS in production, and ensure match JSON files are not writable by unrelated system users. The bundled `admin/private/deepseek_config.example.php` should contain only a dummy placeholder key; rotate any actual key that has ever been placed in a tracked file.
