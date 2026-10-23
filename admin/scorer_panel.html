@@ -134,6 +134,7 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
         <button class="ex" data-extra="bye">BYE</button><button class="ex" data-extra="lbye">LEG BYE</button>
       </div>
       <button class="wk" id="bWk">WICKET</button>
+      <button class="ghost" id="bRetire" style="width:100%;margin-top:8px">Retire batter</button>
       <div class="grid g3" style="margin-top:8px">
         <button class="ghost" id="bUndo">&#8630; Undo</button><button class="ghost" id="bSwap">&#8646; Swap strike</button><button class="ghost" id="bInn">End innings</button>
       </div>
@@ -285,6 +286,7 @@ function openWicket(){
   openSheet('<p class="pt">Wicket</p><label>Who is out?</label>'+
     pick('who',['1','2'],[esc(clean(S.striker))+' (striker)',esc(clean(S.non_striker))+' (non-striker)'],'1','row2')+
     '<label>Dismissal</label><select id="wicketType" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--txt)"><option value="bowled">Bowled</option><option value="caught">Caught</option><option value="lbw">LBW</option><option value="runout">Run out</option><option value="stumped">Stumped</option></select>'+
+    '<label>Fielder (required for caught, run out and stumped)</label><input type="text" id="fielder" maxlength="40" placeholder="Fielder name">'+
     '<label>DRS decision (if reviewed)</label><select id="reviewResult" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--txt)"><option value="">No review</option><option value="out">Out · upheld</option><option value="notout">Not out · overturned</option></select>'+
     '<div class="mt" style="margin-top:8px">Duck animations are automatic. A golden duck means out for zero on the first ball faced.</div>'+
     '<label>Incoming batter</label><input type="text" id="newBatter" maxlength="40" placeholder="Required unless this is the tenth wicket">'+
@@ -293,11 +295,19 @@ function openWicket(){
   bindPicks();$('sX').onclick=closeSheet;
   const wicketType=$('wicketType');
   const syncDismissal=()=>{const nonStriker=val('who')==='2';Array.from(wicketType.options).forEach(o=>o.disabled=nonStriker&&o.value!=='runout');if(nonStriker)wicketType.value='runout';syncCompletedRuns()};
-  const syncCompletedRuns=()=>{const isRunOut=wicketType.value==='runout';document.querySelectorAll('[data-pick="wr"] .opt').forEach(b=>b.disabled=!isRunOut&&b.dataset.v!=='0');if(!isRunOut)document.querySelector('[data-pick="wr"]').dataset.value='0';};
+  const fielderNeeded=()=>['caught','runout','stumped'].includes(wicketType.value);
+  const syncCompletedRuns=()=>{const isRunOut=wicketType.value==='runout';$('fielder').required=fielderNeeded();$('fielder').style.display=fielderNeeded()?'':'none';document.querySelectorAll('[data-pick="wr"] .opt').forEach(b=>b.disabled=!isRunOut&&b.dataset.v!=='0');if(!isRunOut)document.querySelector('[data-pick="wr"]').dataset.value='0';};
   document.querySelector('[data-pick="who"]').addEventListener('click',syncDismissal);
   wicketType.onchange=syncCompletedRuns;syncCompletedRuns();
   $('newBatter').required=S.team_wickets<9;
-  $('sGo').onclick=()=>{const w=val('who'),r=val('wr'),newBatter=$('newBatter').value.trim();if(S.team_wickets<9&&!newBatter)return toast('Enter the incoming batter',false);closeSheet();send({live_event:'wicket:'+w+(r!=='0'?'+'+r:''),dismissal_type:wicketType.value,review_result:$('reviewResult').value,new_batter:newBatter})};
+  $('sGo').onclick=()=>{const w=val('who'),r=val('wr'),newBatter=$('newBatter').value.trim(),fielder=$('fielder').value.trim();if(S.team_wickets<9&&!newBatter)return toast('Enter the incoming batter',false);if(fielderNeeded()&&!fielder)return toast('Enter the fielder name',false);closeSheet();send({live_event:'wicket:'+w+(r!=='0'?'+'+r:''),dismissal_type:wicketType.value,review_result:$('reviewResult').value,new_batter:newBatter,fielder})};
+}
+function openRetire(){
+  openSheet('<p class="pt">Retire batter out</p><label>Choose batter</label>'+pick('retireWho',['1','2'],[esc(clean(S.striker))+' (striker)',esc(clean(S.non_striker))+' (non-striker)'],'1','row2')+
+    '<label>Incoming batter</label><input type="text" id="retireNewBatter" maxlength="40" placeholder="Required unless this is the tenth wicket">'+
+    '<div class="mt" style="margin-top:8px">Retired out counts as a wicket; no delivery is added.</div><button class="go red" id="retireGo">Confirm retired out</button><button class="ghost" id="retireX" style="width:100%;margin-top:8px">Cancel</button>');
+  bindPicks();$('retireX').onclick=closeSheet;
+  $('retireGo').onclick=()=>{const newBatter=$('retireNewBatter').value.trim();if(S.team_wickets<9&&!newBatter)return toast('Enter the incoming batter',false);closeSheet();send({retire_batter:'1',batter_slot:val('retireWho'),new_batter:newBatter})};
 }
 
 /* ---------- navigation ---------- */
@@ -341,6 +351,7 @@ $('bAI').onclick=genAI;
 document.querySelectorAll('[data-ev]').forEach(b=>b.onclick=()=>send({live_event:b.dataset.ev}));
 document.querySelectorAll('[data-extra]').forEach(b=>b.onclick=()=>openExtra(b.dataset.extra));
 $('bWk').onclick=openWicket;
+$('bRetire').onclick=openRetire;
 $('bUndo').onclick=()=>send({undo:'1'});
 $('bSwap').onclick=()=>send({swap:'1'});
 $('bInn').onclick=()=>{if(confirm('End this innings and start the next one?'))send({change_inning:'1'})};

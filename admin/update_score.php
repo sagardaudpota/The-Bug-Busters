@@ -76,7 +76,8 @@ function swapStrike(&$data) {
 function snapshot($data) {
     $keys = ['striker', 'non_striker', 'striker_runs', 'striker_balls',
              'non_striker_runs', 'non_striker_balls', 'team_runs',
-             'team_wickets', 'over', 'ball_history', 'bowler_wicket_streak'];
+             'team_wickets', 'over', 'ball_history', 'bowler_wicket_streak',
+             'dismissals', 'fall_of_wickets', 'retirements', 'ball_by_ball', 'innings_number'];
     return array_intersect_key($data, array_flip($keys));
 }
 
@@ -151,7 +152,12 @@ $defaultData = [
     "max_overs"         => 20,
     "target"            => 0,
     "active_design"     => "green",
-    "bowler_wicket_streak" => 0
+    "bowler_wicket_streak" => 0,
+    "innings_number"   => 1,
+    "dismissals"       => [],
+    "fall_of_wickets"  => [],
+    "retirements"      => [],
+    "ball_by_ball"     => []
 ];
 
 // ---------------------------------------------------------------- request gate
@@ -164,7 +170,14 @@ if (!$lock || !flock($lock, LOCK_EX)) respond(500, "Could not lock score file.")
 
 $activeId = activeMatchId();
 $data = readJson(matchFile($activeId), $defaultData);
+if (!array_key_exists('innings_number', $data)) {
+    $data['innings_number'] = (($data['target'] ?? 0) > 0 && ($data['match_mode'] ?? '') === 'chasing') ? 2 : 1;
+}
 $data = array_merge($defaultData, $data);   // fill any missing keys
+foreach (['dismissals', 'fall_of_wickets', 'retirements', 'ball_by_ball', 'event_feed'] as $listKey) {
+    if (!is_array($data[$listKey])) $data[$listKey] = [];
+}
+if ((int)$data['innings_number'] < 1) $data['innings_number'] = 1;
 
 // Match management: a new match starts from clean defaults; selecting an existing
 // match only switches the active pointer and does not modify its score.
@@ -297,10 +310,51 @@ if (($_POST['change_inning'] ?? '') === '1') {
     $data['over'] = 0.0;
     $data['ball_history'] = [];
     $data['match_mode'] = "chasing";
+    $data['innings_number'] = max(1, (int)($data['innings_number'] ?? 1)) + 1;
     $data['bowler_wicket_streak'] = 0;
     markScoreSync($data);
     clearUndo();
     saveOrFail($data, "Inning changed.", "Failed to change inning.");
+}
+
+// Retire a batter out without consuming a delivery (for a declared retirement).
+if (($_POST['retire_batter'] ?? '') === '1') {
+    $slot = ($_POST['batter_slot'] ?? '') === '2' ? '2' : '1';
+    if ((int)$data['team_wickets'] >= 10) respond(409, 'The innings is already all out.');
+    $field = $slot === '1' ? 'striker' : 'non_striker';
+    $runsField = $slot === '1' ? 'striker_runs' : 'non_striker_runs';
+    $ballsField = $slot === '1' ? 'striker_balls' : 'non_striker_balls';
+    $outName = clean($data[$field], 40);
+    $incoming = clean($_POST['new_batter'] ?? '', 40);
+    if ($incoming === '' && (int)$data['team_wickets'] < 9) respond(400, 'Enter the incoming batter name.');
+    pushUndo($data);
+    $ordinal = (int)$data['team_wickets'] + 1;
+    $record = [
+        'innings_number' => (int)$data['innings_number'], 'wicket_number' => $ordinal,
+        'event_type' => 'retired_out', 'player' => $outName,
+        'runs' => (int)$data[$runsField], 'balls' => (int)$data[$ballsField],
+        'dismissal_type' => 'retired_out', 'bowler' => null, 'fielder' => null,
+        'dismissed_by' => 'Retired out (not credited to bowler)',
+        'over_at_fall' => $data['over'], 'legal_balls_at_fall' => oversToBalls($data['over']),
+        'over_ball' => null, 'score_at_fall' => ['runs' => (int)$data['team_runs'], 'wickets' => $ordinal],
+        'timestamp' => gmdate('c')
+    ];
+    $data['dismissals'][] = $record;
+    $data['fall_of_wickets'][] = $record;
+    $data['retirements'][] = $record;
+    $data['team_wickets'] = $ordinal;
+    if ($incoming !== '') { $data[$field] = $incoming; $data[$runsField] = 0; $data[$ballsField] = 0; }
+    else $data[$field] = $outName . ' (out)';
+    $data['bowler_wicket_streak'] = 0;
+    $data['ball_by_ball'][] = [
+        'sequence' => count($data['ball_by_ball']) + 1, 'innings_number' => (int)$data['innings_number'],
+        'event_type' => 'retired_out', 'legal_delivery' => false, 'over_at_event' => $data['over'],
+        'team_score' => (int)$data['team_runs'], 'team_wickets' => $ordinal, 'dismissal' => $record,
+        'batters_after' => ['striker' => $data['striker'], 'non_striker' => $data['non_striker']],
+        'timestamp' => gmdate('c')
+    ];
+    markScoreSync($data);
+    saveOrFail($data, 'Batter retired out.', 'Failed to retire batter.');
 }
 
 // ---------------------------------------------------------------- live event
@@ -320,6 +374,10 @@ if (isset($_POST['live_event'])) {
     if ($ev['type'] === 'wicket' && $reviewResult !== 'notout' && $dismissalType !== 'runout' && $ev['extra'] > 0) respond(400, 'Completed runs only apply to a run out.');
     $newBatter = clean($_POST['new_batter'] ?? '', 40);
     if ($ev['type'] === 'wicket' && $reviewResult !== 'notout' && $data['team_wickets'] < 9 && $newBatter === '') respond(400, 'Enter the incoming batter name.');
+    $fielder = clean($_POST['fielder'] ?? '', 40);
+    if ($ev['type'] === 'wicket' && $reviewResult !== 'notout' && in_array($dismissalType, ['caught', 'runout', 'stumped'], true) && $fielder === '') respond(400, 'Enter the fielder name.');
+    $deliveryNo = oversToBalls($data['over']) + 1;
+    $eventOverBall = (int)(floor(($deliveryNo - 1) / 6) + 1) . '.' . (int)(($deliveryNo - 1) % 6 + 1);
     $effects = [];
     $wasWicket = false;
     $rotateRuns = 0;
@@ -354,12 +412,32 @@ if (isset($_POST['live_event'])) {
                 $outRuns = (int)$data['non_striker_runs'];
                 $outBalls = (int)$data['non_striker_balls'];
             }
+            $dismissedPlayer = $ev['target'] === '1' ? clean($data['striker'], 40) : clean($data['non_striker'], 40);
             $duck = '';
             if ($outRuns === 0) {
                 if ($outBalls > 0) $duck = 'duck';
                 elseif ($ev['target'] === '1' || $dismissalType !== 'runout') $duck = 'golden';
             }
+            $dismissedBy = [
+                'bowled' => 'b ' . clean($data['bowler'], 40),
+                'caught' => 'c ' . $fielder . ' b ' . clean($data['bowler'], 40),
+                'lbw' => 'lbw b ' . clean($data['bowler'], 40),
+                'runout' => $fielder . ' run out',
+                'stumped' => 'st ' . $fielder . ' b ' . clean($data['bowler'], 40)
+            ][$dismissalType];
+            $dismissalRecord = [
+                'innings_number' => (int)$data['innings_number'], 'wicket_number' => (int)$data['team_wickets'] + 1,
+                'event_type' => 'wicket', 'player' => $dismissedPlayer, 'runs' => $outRuns, 'balls' => $outBalls,
+                'dismissal_type' => $dismissalType, 'bowler' => clean($data['bowler'], 40),
+                'fielder' => $fielder !== '' ? $fielder : null, 'dismissed_by' => $dismissedBy,
+                'over_at_fall' => $data['over'], 'legal_balls_at_fall' => oversToBalls($data['over']) + 1,
+                'over_ball' => $eventOverBall, 'score_at_fall' => ['runs' => (int)$data['team_runs'] + $ev['extra'], 'wickets' => (int)$data['team_wickets'] + 1],
+                'review_result' => $reviewResult !== '' ? $reviewResult : null, 'completed_runs' => $ev['extra'],
+                'timestamp' => gmdate('c')
+            ];
             $data['team_wickets'] = min(10, $data['team_wickets'] + 1);
+            $data['dismissals'][] = $dismissalRecord;
+            $data['fall_of_wickets'][] = $dismissalRecord;
             $data['team_runs'] += $ev['extra'];
             if ($ev['target'] === '1') {
                 $data['striker'] .= " (out)";
@@ -450,6 +528,16 @@ if (isset($_POST['live_event'])) {
     $data['event_seq'] = (int)($data['event_seq'] ?? 0) + 1;
     $data['last_event'] = $raw;
     $data['last_effects'] = $effects;
+    $data['ball_by_ball'][] = [
+        'sequence' => count($data['ball_by_ball']) + 1, 'innings_number' => (int)$data['innings_number'],
+        'event_type' => $ev['type'], 'event' => $raw, 'legal_delivery' => $legal,
+        'over_ball' => $eventOverBall, 'over_after_event' => $data['over'],
+        'team_score' => (int)$data['team_runs'], 'team_wickets' => (int)$data['team_wickets'],
+        'striker' => ['name' => clean($data['striker'], 40), 'runs' => (int)$data['striker_runs'], 'balls' => (int)$data['striker_balls']],
+        'non_striker' => ['name' => clean($data['non_striker'], 40), 'runs' => (int)$data['non_striker_runs'], 'balls' => (int)$data['non_striker_balls']],
+        'bowler' => clean($data['bowler'], 40), 'dismissal' => $dismissalRecord ?? null,
+        'effects' => $effects, 'timestamp' => gmdate('c')
+    ];
     $feed = $data['event_feed'] ?? [];
     $feed[] = ['seq' => $data['event_seq'], 'event' => $raw, 'effects' => $effects];
     $data['event_feed'] = array_slice($feed, -50);
