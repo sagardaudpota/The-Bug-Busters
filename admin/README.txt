@@ -19,6 +19,8 @@ OPTIONAL - copy these yourself
 
 AI files
   ai_reports.php             reads the active match and returns DeepSeek reports
+  ai_publish.php             publishes or hides the saved report on the frontend
+  get_ai_status.php          lets the admin panel restore report and visibility state
   deepseek_client.php        sends the selected match JSON to DeepSeek
   private/deepseek_config.php stores the server-side API key
 
@@ -30,6 +32,8 @@ DEEPSEEK AI SETUP (HTTPS / SHARED HOSTING)
   3. Open scorer_panel.html through your HTTPS website URL, select a match, then use AI Analytics.
      The browser calls admin/ai_reports.php on the same HTTPS host; PHP loads active_match.json,
      reads that match's JSON, and sends it to DeepSeek. The key stays on the server.
+  4. Reports are saved in that match JSON but stay hidden from the broadcast by default.
+     Use Show on frontend in AI Analytics to publish; the overlay updates on its normal poll.
 
 Match files are created in matches/ (match_1.json, match_2.json, ...).
 active_match.json contains the match_id used by the admin and frontend.

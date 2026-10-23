@@ -187,6 +187,7 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
           <label class="chk"><input type="checkbox" class="aiOpt" value="chase_analysis" checked>Chase analysis</label>
           <label class="chk"><input type="checkbox" class="aiOpt" value="post_match_report">Post-match report</label></div>
         <div class="aistat"><button class="go" id="bAI">Generate reports</button><span id="aiStat"></span></div>
+        <div class="aistat"><button class="ghost" id="bAIVisibility" disabled>Show on frontend</button><span id="aiVisibilityStat">Generate a report first. Reports are hidden by default.</span></div>
       </div>
       <div id="aiOut"></div>
     </section>
@@ -220,6 +221,13 @@ async function send(p){
 /* ---------- render ---------- */
 function render(d){
   const prev=S.team_runs; S=d;
+  const matchId=String(d.match_id||'');
+  if(lastAiMatchId&&matchId!==lastAiMatchId){$('aiOut').replaceChildren();$('aiStat').textContent=''}
+  lastAiMatchId=matchId;syncAIVisibilityControls(d);
+  if(d.ai_analysis&&$('aiOut').children.length===0){
+    const match=document.createElement('div');match.className='mt';match.textContent='Analyzed match: '+matchId;$('aiOut').appendChild(match);
+    Object.keys(AI_TITLES).forEach(k=>aiCard(AI_TITLES[k],d.ai_analysis[k],k));$('aiStat').textContent='Reports ready.';
+  }
   const sc=$('pScore'); const t=d.team_runs+'/'+d.team_wickets;
   if(sc.textContent!==t){sc.textContent=t;sc.classList.remove('pop');void sc.offsetWidth;sc.classList.add('pop')}
   $('pTeam').textContent=d.team;$('pOpp').textContent=d.opponent;
@@ -243,7 +251,9 @@ function render(d){
     $('iOvers').value=d.max_overs||'';$('iTarget').value=d.target||0}
 }
 async function refresh(){
-  try{const r=await fetch(GET+'?_='+Date.now(),{cache:'no-store'});render(await r.json());
+  try{
+    const stamp=Date.now();const [r,aiR]=await Promise.all([fetch(GET+'?_='+stamp,{cache:'no-store'}),fetch('get_ai_status.php?_='+stamp,{cache:'no-store'})]);
+    const d=await r.json();if(aiR.ok){const ai=await aiR.json();if(ai.match_id===d.match_id)Object.assign(d,ai)}render(d);
     $('dot').className='dot';$('liveTxt').textContent='LIVE';$('cConn').textContent='\u2022 CONNECTED';
     $('pSync').textContent=new Date().toLocaleTimeString()}
   catch(e){$('dot').className='dot off';$('liveTxt').textContent='OFFLINE';$('cConn').textContent='\u2022 OFFLINE'}
@@ -322,6 +332,14 @@ show(location.hash.slice(1)||'score');
 
 /* ---------- AI analytics ---------- */
 const AI_TITLES={player_insights:'Player insights',turning_points:'Turning points',chase_analysis:'Chase analysis',post_match_report:'Post-match report'};
+let lastAiMatchId='';
+function syncAIVisibilityControls(d){
+  const available=!!(d&&d.ai_analysis&&typeof d.ai_analysis==='object');
+  const visible=d&&d.ai_analysis_visible===true;
+  $('bAIVisibility').disabled=!available||busy;
+  $('bAIVisibility').textContent=visible?'Hide from frontend':'Show on frontend';
+  $('aiVisibilityStat').textContent=!available?'Generate a report first. Reports are hidden by default.':(visible?'Visible on frontend.':'Report ready · hidden by default.');
+}
 function aiCard(title,report,key){
   if(!report||!report.selected)return;
   const d=document.createElement('div');d.className='rep';
@@ -342,9 +360,11 @@ async function genAI(){
   if(!picks.length)return toast('Choose at least one report',false);
   const btn=$('bAI');btn.disabled=true;$('aiStat').textContent='Generating\u2026';$('aiOut').innerHTML='';
   try{
-    const r=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reports:picks})});
+    const r=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reports:picks,match_id:S.match_id})});
     const data=await r.json();if(!r.ok)throw new Error(data.error||'Server returned '+r.status);
-    $('aiOut').dataset.matchId=data.match_id||'';
+    if(data.match_id!==S.match_id)throw new Error('The selected match changed. Refresh and check its saved report.');
+    $('aiOut').replaceChildren();
+    S.ai_analysis=data;S.ai_analysis_visible=false;syncAIVisibilityControls(S);
     const match=document.createElement('div');match.className='mt';match.textContent='Analyzed match: '+(data.match_id||'active match');$('aiOut').appendChild(match);
     picks.forEach(k=>aiCard(AI_TITLES[k],data[k],k));
     $('aiStat').textContent='Reports ready.';
@@ -352,6 +372,15 @@ async function genAI(){
   finally{btn.disabled=false}
 }
 $('bAI').onclick=genAI;
+$('bAIVisibility').onclick=async()=>{
+  if(!S.match_id||!S.ai_analysis)return;
+  const visible=S.ai_analysis_visible!==true;const btn=$('bAIVisibility');btn.disabled=true;
+  try{
+    const r=await fetch('ai_publish.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_id:S.match_id,visible})});
+    const result=await r.json();if(!r.ok)throw new Error(result.error||'Could not update frontend visibility.');
+    S.ai_analysis_visible=result.visible===true;syncAIVisibilityControls(S);toast(S.ai_analysis_visible?'AI analysis is visible on frontend.':'AI analysis hidden from frontend.');
+  }catch(e){syncAIVisibilityControls(S);toast(e.message,false)}
+};
 
 /* ---------- wiring ---------- */
 document.querySelectorAll('[data-ev]').forEach(b=>b.onclick=()=>send({live_event:b.dataset.ev}));

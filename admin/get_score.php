@@ -13,4 +13,5 @@ if (isset($data['ball_history']) && is_array($data['ball_history'])) {
     }, $data['ball_history']);
 }
 $data['match_id'] = $id;
+if (($data['ai_analysis_visible'] ?? false) !== true) unset($data['ai_analysis']);
 echo json_encode($data);
