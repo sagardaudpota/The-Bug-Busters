@@ -20,6 +20,7 @@
    URL params:  ?ticker=Your text here  &opp=IND
    ========================================================= */
 (function () {
+  gsap.config({ force3D: false });      // avoid blurry GPU layers
   const $ = (s, r = document) => r.querySelector(s);
   const stage = $('#stage');
   const mode = document.body.dataset.mode || 'live'; // 'live' | 'need'
@@ -27,8 +28,10 @@
   /* ---------- Fit stage to viewport, centred ---------- */
   function fit() {
     const k = Math.min(innerWidth / 1920, innerHeight / 1080);
-    const x = (innerWidth - 1920 * k) / 2, y = (innerHeight - 1080 * k) / 2;
-    stage.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + k + ')';
+    const x = Math.round((innerWidth - 1920 * k) / 2), y = Math.round((innerHeight - 1080 * k) / 2);
+    stage.style.zoom = k;                 // real layout scaling = crisp text
+    stage.style.left = (x / k) + 'px';    // offsets are in zoomed units
+    stage.style.top = (y / k) + 'px';
   }
   addEventListener('resize', fit); fit();
 
@@ -643,7 +646,8 @@
   showTicker(false);
   autoTicker();
   gsap.set([ball, shadow, txt, sub, flash], { opacity: 0 });
-  const intro = gsap.timeline({ defaults: { ease: 'power4.out' } });
+  const intro = gsap.timeline({ defaults: { ease: 'power4.out' },
+    onComplete: () => gsap.set('#logo, .ticker, .flag, .core, .bat, .live > *, .score > *', { clearProps: 'transform,opacity' }) });
   intro.from('#logo', { x: -60, opacity: 0, duration: .8 })
        .from('.ticker', { y: 40, opacity: 0, scaleX: .85, duration: .8 }, .1)
        .from('.flag.left', { xPercent: -120, duration: .9 }, .2)

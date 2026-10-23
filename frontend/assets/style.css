@@ -38,7 +38,7 @@ html, body {
 /* ---------- Logo ---------- */
 #logo {
   position: absolute;
-  top: 46px; left: 70px;
+  top: 46px; left: 60px;
   width: 150px;
 }
 #logo img { width: 100%; display: block; filter: drop-shadow(0 4px 10px rgba(0,0,0,.45)); }
@@ -48,8 +48,8 @@ html, body {
   position: absolute;
   left: 50%;
   bottom: 64px;
-  width: 1500px;
-  margin-left: -750px;
+  width: 1800px;
+  margin-left: -900px;
 }
 
 /* ---------- Ticker bar (placeholder text) ---------- */
@@ -111,7 +111,6 @@ html, body {
   display: flex;
   align-items: stretch;
   height: 118px;
-  filter: drop-shadow(0 14px 24px rgba(0,0,0,.45));
 }
 
 .flag {
@@ -138,7 +137,7 @@ html, body {
   position: relative;
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 440px 1fr;
+  grid-template-columns: 1fr 480px 1fr;
   align-items: stretch;
   background: linear-gradient(#f5f7fa, #c6c9d1 58%, #a9adb5);
   border-radius: 70px;
@@ -350,3 +349,12 @@ body.wicket-mode .board { animation: shake .5s; }
 .legend div { display: flex; align-items: center; gap: 14px; }
 .legend kbd { display: inline-grid; place-items: center; min-width: 30px; height: 28px; padding: 0 6px; border-radius: 7px; background: #fff; color: var(--ink); font: 800 18px 'Barlow Condensed', sans-serif; }
 .legend .lg-foot { margin-top: 6px; opacity: .7; }
+
+/* ---- Crisp rendering (OBS) ---- */
+html, body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+.flag, .core { box-shadow: 0 14px 24px rgba(0,0,0,.4); }
+.flag.left  { box-shadow: 6px 14px 24px rgba(0,0,0,.4); }
+.flag.right { box-shadow: -6px 14px 24px rgba(0,0,0,.4); }
