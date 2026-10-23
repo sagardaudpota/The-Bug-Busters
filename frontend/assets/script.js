@@ -135,9 +135,34 @@
     render();
     if (matchChanged) { lastMatchId = d.match_id; lastEventSeq = incomingSeq; }
     else if (newEvent) {
-      playScoringEvent(d.last_event, hist, oldOverLength);
+      const feed = Array.isArray(d.event_feed) ? d.event_feed.filter(item => Number(item.seq) > lastEventSeq) : [];
+      if (feed.length) feed.forEach(item => queueLiveEvent(item.event, item.effects || [], hist, oldOverLength));
+      else queueLiveEvent(d.last_event, d.last_effects || [], hist, oldOverLength);
       lastEventSeq = incomingSeq;
     }
+  }
+
+  const adminFxQueue = [];
+  let adminFxBusy = false;
+  function queueLiveEvent(raw, effects, history, oldOverLength) {
+    if (raw === 'sync') return;
+    const wicketEffects = String(raw || '').startsWith('wicket:') && effects.length > 0;
+    if (!wicketEffects) adminFxQueue.push({ type: 'score_event', event: raw, history, oldOverLength });
+    effects.forEach(effect => adminFxQueue.push(effect));
+    playNextAdminFx();
+  }
+  function playNextAdminFx() {
+    if (adminFxBusy || !adminFxQueue.length) return;
+    adminFxBusy = true;
+    const effect = adminFxQueue.shift(), previousTimeline = tl;
+    if (effect.type === 'score_event') playScoringEvent(effect.event, effect.history, effect.oldOverLength);
+    else if (effect.type === 'review') review(effect.result);
+    else if (effect.type === 'dismissal') dismiss(effect.kind, { duck: effect.duck || '', sub: effect.sub || '' });
+    else if (effect.type === 'milestone') milestone(Number(effect.runs), effect);
+    else if (effect.type === 'hat_trick') hatTrick(effect.bowler);
+    const activeTimeline = tl !== previousTimeline ? tl : null;
+    const duration = activeTimeline && activeTimeline.duration ? activeTimeline.duration() : .65;
+    setTimeout(() => { adminFxBusy = false; playNextAdminFx(); }, Math.max(250, duration * 1000 + 180));
   }
 
   function playScoringEvent(rawValue, history, oldOverLength) {
@@ -529,13 +554,13 @@
   }
 
   /* ---------- HAT-TRICK ---------- */
-  function hatTrick() {
+  function hatTrick(bowlerName) {
     reset();
     tl = gsap.timeline({ onComplete: reset });
     tl.to(flash, { opacity: .5, backgroundColor: '#8a4dff', duration: .1, yoyo: true, repeat: 3 }, 0)
       .add(slam('HAT-TRICK!', '#c58cff', 'rgba(170,110,255,.95)', 'Three in three'), 0)
       .add(() => burst(120, ['#c58cff', '#ffd23f', '#ffffff', '#e31857'], 960, 470, 760, 540), .3)
-      .add(banner({ tag: 'BOWLER', title: state.bowler.name.toUpperCase(), sub: 'THREE WICKETS IN THREE BALLS', color: '#c58cff', icon: '🎩', y: 700, hold: 2.2 }), .7);
+      .add(banner({ tag: 'BOWLER', title: (bowlerName || state.bowler.name).toUpperCase(), sub: 'THREE WICKETS IN THREE BALLS', color: '#c58cff', icon: '🎩', y: 700, hold: 2.2 }), .7);
     [.3, .65, 1.0].forEach(tm => tl.add(() => ring(960, 470, '#c58cff'), tm));
   }
 

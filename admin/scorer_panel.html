@@ -284,10 +284,20 @@ function openExtra(t){
 function openWicket(){
   openSheet('<p class="pt">Wicket</p><label>Who is out?</label>'+
     pick('who',['1','2'],[esc(clean(S.striker))+' (striker)',esc(clean(S.non_striker))+' (non-striker)'],'1','row2')+
+    '<label>Dismissal</label><select id="wicketType" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--txt)"><option value="bowled">Bowled</option><option value="caught">Caught</option><option value="lbw">LBW</option><option value="runout">Run out</option><option value="stumped">Stumped</option></select>'+
+    '<label>DRS decision (if reviewed)</label><select id="reviewResult" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--txt)"><option value="">No review</option><option value="out">Out · upheld</option><option value="notout">Not out · overturned</option></select>'+
+    '<div class="mt" style="margin-top:8px">Duck animations are automatic. A golden duck means out for zero on the first ball faced.</div>'+
+    '<label>Incoming batter</label><input type="text" id="newBatter" maxlength="40" placeholder="Required unless this is the tenth wicket">'+
     '<label>Runs completed first</label>'+pick('wr',['0','1','2','3'],['0','1','2','3'],'0','g4')+
     '<button class="go red" id="sGo">Confirm wicket</button><button class="ghost" id="sX" style="width:100%;margin-top:8px">Cancel</button>');
   bindPicks();$('sX').onclick=closeSheet;
-  $('sGo').onclick=()=>{const w=val('who'),r=val('wr');closeSheet();send({live_event:'wicket:'+w+(r!=='0'?'+'+r:'')})};
+  const wicketType=$('wicketType');
+  const syncDismissal=()=>{const nonStriker=val('who')==='2';Array.from(wicketType.options).forEach(o=>o.disabled=nonStriker&&o.value!=='runout');if(nonStriker)wicketType.value='runout';syncCompletedRuns()};
+  const syncCompletedRuns=()=>{const isRunOut=wicketType.value==='runout';document.querySelectorAll('[data-pick="wr"] .opt').forEach(b=>b.disabled=!isRunOut&&b.dataset.v!=='0');if(!isRunOut)document.querySelector('[data-pick="wr"]').dataset.value='0';};
+  document.querySelector('[data-pick="who"]').addEventListener('click',syncDismissal);
+  wicketType.onchange=syncCompletedRuns;syncCompletedRuns();
+  $('newBatter').required=S.team_wickets<9;
+  $('sGo').onclick=()=>{const w=val('who'),r=val('wr'),newBatter=$('newBatter').value.trim();if(S.team_wickets<9&&!newBatter)return toast('Enter the incoming batter',false);closeSheet();send({live_event:'wicket:'+w+(r!=='0'?'+'+r:''),dismissal_type:wicketType.value,review_result:$('reviewResult').value,new_batter:newBatter})};
 }
 
 /* ---------- navigation ---------- */

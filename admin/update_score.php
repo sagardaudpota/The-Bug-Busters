@@ -43,6 +43,13 @@ function activeMatchId() {
 }
 function matchFile($id) { return MATCHES_DIR . '/' . $id . '.json'; }
 function undoFile($id) { return MATCHES_DIR . '/' . $id . '_undo.json'; }
+function markScoreSync(&$data) {
+    $seq = (int)($data['event_seq'] ?? 0) + 1;
+    $data['event_seq'] = $seq;
+    $data['last_event'] = 'sync';
+    $data['last_effects'] = [];
+    $data['event_feed'] = [['seq' => $seq, 'event' => 'sync', 'effects' => []]];
+}
 function saveOrFail($data, $okMsg, $failMsg) {
     $data['revision'] = (int)($data['revision'] ?? 0) + 1;
     $data['updated_at'] = gmdate('c');
@@ -59,11 +66,17 @@ function ballsToOvers($balls) {
     return round(intdiv($balls, 6) + ($balls % 6) / 10, 1);
 }
 
+function swapStrike(&$data) {
+    [$data['striker'], $data['non_striker']] = [$data['non_striker'], $data['striker']];
+    [$data['striker_runs'], $data['non_striker_runs']] = [$data['non_striker_runs'], $data['striker_runs']];
+    [$data['striker_balls'], $data['non_striker_balls']] = [$data['non_striker_balls'], $data['striker_balls']];
+}
+
 // Only the scoring fields are snapshotted for undo.
 function snapshot($data) {
     $keys = ['striker', 'non_striker', 'striker_runs', 'striker_balls',
              'non_striker_runs', 'non_striker_balls', 'team_runs',
-             'team_wickets', 'over', 'ball_history'];
+             'team_wickets', 'over', 'ball_history', 'bowler_wicket_streak'];
     return array_intersect_key($data, array_flip($keys));
 }
 
@@ -137,7 +150,8 @@ $defaultData = [
     "arrow_img"         => "images/arrow.png",
     "max_overs"         => 20,
     "target"            => 0,
-    "active_design"     => "green"
+    "active_design"     => "green",
+    "bowler_wicket_streak" => 0
 ];
 
 // ---------------------------------------------------------------- request gate
@@ -182,25 +196,26 @@ if (isset($_POST['select_match'])) {
 if (($_POST['clear'] ?? '') === '1') {
     $fresh = $defaultData;
     $fresh['active_design'] = $data['active_design'];   // keep the chosen theme
+    markScoreSync($fresh);
     clearUndo();
     saveOrFail($fresh, "Score cleared.", "Failed to clear score.");
 }
 
 // ---------------------------------------------------------------- undo
 if (($_POST['undo'] ?? '') === '1') {
-    $stack = readJson(UNDO_FILE, []);
+    $undoPath = undoFile($activeId);
+    $stack = readJson($undoPath, []);
     if (empty($stack)) respond(200, "Nothing to undo.");
     $prev = array_pop($stack);
     $data = array_merge($data, $prev);
-    writeJson(UNDO_FILE, $stack);
+    markScoreSync($data);
+    writeJson($undoPath, $stack);
     saveOrFail($data, "Last ball undone.", "Failed to undo.");
 }
 
 // ---------------------------------------------------------------- swap batsmen
 if (($_POST['swap'] ?? '') === '1') {
-    [$data['striker'], $data['non_striker']] = [$data['non_striker'], $data['striker']];
-    [$data['striker_runs'], $data['non_striker_runs']] = [$data['non_striker_runs'], $data['striker_runs']];
-    [$data['striker_balls'], $data['non_striker_balls']] = [$data['non_striker_balls'], $data['striker_balls']];
+    swapStrike($data);
     saveOrFail($data, "Batsmen swapped.", "Failed to swap batsmen.");
 }
 
@@ -239,11 +254,12 @@ foreach ($renames as $flag => [$field, $curKey, $newKey, $label, $stripOut]) {
     $stored = $stripOut ? str_replace(" (out)", "", $data[$field]) : $data[$field];
     if ($new === '' || $stored !== $old) respond(409, "$label name did not match.");
     $data[$field] = $new;
+    if ($field === 'bowler') $data['bowler_wicket_streak'] = 0;
     saveOrFail($data, "$label name updated.", "Failed to update " . strtolower($label) . " name.");
 }
 
 // ---------------------------------------------------------------- set custom state
-if (($_POST['set_state'] ?? '') === '1') {
+    if (($_POST['set_state'] ?? '') === '1') {
     foreach (['team_runs', 'team_wickets', 'striker_runs', 'striker_balls',
               'non_striker_runs', 'non_striker_balls', 'target'] as $k) {
         if (isset($_POST[$k]) && trim($_POST[$k]) !== '' && is_numeric($_POST[$k])) {
@@ -262,6 +278,8 @@ if (($_POST['set_state'] ?? '') === '1') {
         }
         if ($temp) $data['ball_history'] = $temp;
     }
+    $data['bowler_wicket_streak'] = 0;
+    markScoreSync($data);
     clearUndo();   // snapshots no longer match the state
     saveOrFail($data, "Match state updated.", "Failed to update match state.");
 }
@@ -279,6 +297,8 @@ if (($_POST['change_inning'] ?? '') === '1') {
     $data['over'] = 0.0;
     $data['ball_history'] = [];
     $data['match_mode'] = "chasing";
+    $data['bowler_wicket_streak'] = 0;
+    markScoreSync($data);
     clearUndo();
     saveOrFail($data, "Inning changed.", "Failed to change inning.");
 }
@@ -289,6 +309,21 @@ if (isset($_POST['live_event'])) {
     $ev = parseEvent($raw);
     if ($ev === null) respond(400, "Invalid event.");
 
+    $beforeStrikerRuns = (int)$data['striker_runs'];
+    $beforeStrikerName = (string)$data['striker'];
+    $dismissalType = $_POST['dismissal_type'] ?? 'bowled';
+    if (!in_array($dismissalType, ['bowled', 'caught', 'lbw', 'runout', 'stumped'], true)) $dismissalType = 'bowled';
+    $reviewResult = $_POST['review_result'] ?? '';
+    if (!in_array($reviewResult, ['out', 'notout'], true)) $reviewResult = '';
+    if ($ev['type'] === 'wicket' && $data['team_wickets'] >= 10) respond(409, 'The innings is already all out.');
+    if ($ev['type'] === 'wicket' && $ev['target'] === '2' && $dismissalType !== 'runout') respond(400, 'A non-striker can only be run out with these dismissal options.');
+    if ($ev['type'] === 'wicket' && $reviewResult !== 'notout' && $dismissalType !== 'runout' && $ev['extra'] > 0) respond(400, 'Completed runs only apply to a run out.');
+    $newBatter = clean($_POST['new_batter'] ?? '', 40);
+    if ($ev['type'] === 'wicket' && $reviewResult !== 'notout' && $data['team_wickets'] < 9 && $newBatter === '') respond(400, 'Enter the incoming batter name.');
+    $effects = [];
+    $wasWicket = false;
+    $rotateRuns = 0;
+
     pushUndo($data);   // snapshot BEFORE changing anything
 
     $legal = false;
@@ -296,6 +331,34 @@ if (isset($_POST['live_event'])) {
 
     switch ($ev['type']) {
         case 'wicket':
+            // A review decision is entered in the wicket popup. An overturned
+            // decision counts as a legal ball but does not add a wicket.
+            if ($reviewResult === 'notout') {
+                $data['team_runs'] += $ev['extra'];
+                $data['striker_runs'] += $ev['extra'];
+                $data['striker_balls'] += 1;
+                $rotateRuns = $ev['extra'];
+                $effects[] = ['type' => 'review', 'result' => 'notout'];
+                $display = 'not out';
+                $legal = true;
+                break;
+            }
+
+            $wasWicket = true;
+            $rotateRuns = $dismissalType === 'runout' ? $ev['extra'] : 0;
+            if ($reviewResult === 'out') $effects[] = ['type' => 'review', 'result' => 'out'];
+            if ($ev['target'] === '1') {
+                $outRuns = (int)$data['striker_runs'];
+                $outBalls = (int)$data['striker_balls'];
+            } else {
+                $outRuns = (int)$data['non_striker_runs'];
+                $outBalls = (int)$data['non_striker_balls'];
+            }
+            $duck = '';
+            if ($outRuns === 0) {
+                if ($outBalls > 0) $duck = 'duck';
+                elseif ($ev['target'] === '1' || $dismissalType !== 'runout') $duck = 'golden';
+            }
             $data['team_wickets'] = min(10, $data['team_wickets'] + 1);
             $data['team_runs'] += $ev['extra'];
             if ($ev['target'] === '1') {
@@ -312,18 +375,21 @@ if (isset($_POST['live_event'])) {
             }
             $display = "W";
             $legal = true;
+            $effects[] = ['type' => 'dismissal', 'kind' => $dismissalType, 'duck' => $duck];
             break;
 
         case 'run':
             $data['striker_runs'] += $ev['runs'];
             $data['team_runs'] += $ev['runs'];
             $data['striker_balls'] += 1;
+            $rotateRuns = $ev['runs'];
             $legal = true;
             break;
 
         case 'nb':
         case 'wd':
             $data['team_runs'] += 1 + $ev['extra'];
+            $rotateRuns = $ev['extra'];
             if ($ev['type'] === 'nb') $data['striker_runs'] += $ev['extra'];
             $display = $ev['type'];
             break;
@@ -332,19 +398,61 @@ if (isset($_POST['live_event'])) {
         case 'lbye':
             $data['team_runs'] += $ev['runs'];
             $data['striker_balls'] += 1;
+            $rotateRuns = $ev['runs'];
             $display = $ev['type'];
             $legal = true;
             break;
     }
 
+    $milestoneName = str_replace(' (out)', '', (string)$data['striker']);
+    $milestoneRuns = (int)$data['striker_runs'];
+    $milestoneBalls = (int)$data['striker_balls'];
+
+    if ($rotateRuns % 2 === 1) swapStrike($data);
+
     if ($legal) {
         $balls = oversToBalls($data['over']) + 1;
         $data['over'] = ballsToOvers($balls);
+
+        if ($wasWicket && !in_array($dismissalType, ['runout'], true)) {
+            $data['bowler_wicket_streak'] = (int)($data['bowler_wicket_streak'] ?? 0) + 1;
+            if ($data['bowler_wicket_streak'] === 3) {
+                $effects[] = ['type' => 'hat_trick', 'bowler' => $data['bowler']];
+            }
+        } elseif ($wasWicket || !in_array($ev['type'], ['wd', 'nb'], true)) {
+            $data['bowler_wicket_streak'] = 0;
+        }
+
+        if ($balls % 6 === 0) swapStrike($data);
+        if ($wasWicket && $newBatter !== '') {
+            if (preg_match('/ \(out\)$/', $data['striker'])) {
+                $data['striker'] = $newBatter;
+                $data['striker_runs'] = $data['striker_balls'] = 0;
+            } elseif (preg_match('/ \(out\)$/', $data['non_striker'])) {
+                $data['non_striker'] = $newBatter;
+                $data['non_striker_runs'] = $data['non_striker_balls'] = 0;
+            }
+        }
+
+    }
+
+    // No-ball runs can also take the striker across a batting milestone.
+    if ($milestoneName === str_replace(' (out)', '', $beforeStrikerName)) {
+        foreach ([50, 100, 150, 200] as $mark) {
+            if ($beforeStrikerRuns < $mark && $milestoneRuns >= $mark) {
+                $effects[] = ['type' => 'milestone', 'runs' => $mark, 'name' => $milestoneName, 'balls' => $milestoneBalls];
+                break;
+            }
+        }
     }
 
     $data['ball_history'][] = ["display" => $display, "full" => $raw];
     $data['event_seq'] = (int)($data['event_seq'] ?? 0) + 1;
     $data['last_event'] = $raw;
+    $data['last_effects'] = $effects;
+    $feed = $data['event_feed'] ?? [];
+    $feed[] = ['seq' => $data['event_seq'], 'event' => $raw, 'effects' => $effects];
+    $data['event_feed'] = array_slice($feed, -50);
     // Over finished: clear the on-screen "this over" strip (undo still restores it).
     if ($legal && oversToBalls($data['over']) % 6 === 0) {
         $data['ball_history'] = [];
