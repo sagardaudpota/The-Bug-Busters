@@ -52,6 +52,8 @@
     ],
     tickIdx: 0
   };
+  let lastMatchId = null, lastEventSeq = null;
+  let aiWasVisible = false, lastAiSignature = '';
   const q = new URLSearchParams(location.search);
   if (q.get('opp')) state.teamB = q.get('opp').toUpperCase();
   if (q.get('ticker')) state.ticker.unshift(['INFO', q.get('ticker')]);
@@ -101,6 +103,157 @@
       }
     }
   }
+
+  // The scorer panel is the source of truth. Polling updates the display in place;
+  // only a newly committed scoring event starts an effect, so reconnects never replay it.
+  function syncFromAdmin(d) {
+    const matchChanged = lastMatchId !== d.match_id;
+    const incomingSeq = Number(d.event_seq || 0);
+    const newEvent = !matchChanged && lastEventSeq !== null && incomingSeq > lastEventSeq;
+    const oldOverLength = state.over.length;
+    const hist = Array.isArray(d.ball_history) ? d.ball_history.map(x => String(x)) : [];
+    const ov = Number(d.over || 0), whole = Math.floor(ov);
+    Object.assign(state, {
+      teamA: d.team || '', teamB: d.opponent || '', runs: Number(d.team_runs || 0),
+      wickets: Number(d.team_wickets || 0), overs: whole, balls: Math.round((ov - whole) * 10),
+      venue: d.match_info || '', striker: { name: clean(d.striker), r: Number(d.striker_runs || 0), b: Number(d.striker_balls || 0) },
+      non: { name: clean(d.non_striker), r: Number(d.non_striker_runs || 0), b: Number(d.non_striker_balls || 0) },
+      bowler: { name: d.bowler || '', fig: '' }, over: hist,
+      need: Math.max(0, Number(d.target || 0) - Number(d.team_runs || 0)),
+      needBalls: Math.max(0, Number(d.max_overs || 0) * 6 - (whole * 6 + Math.round((ov - whole) * 10)))
+    });
+    const imgPath = p => p ? (String(p).startsWith('http') || String(p).startsWith('/') ? p : '../admin/' + p) : '';
+    [[ $('#logo img'), d.logo, 'assets/images/logo.png' ],
+     [ $('.flag.left img'), d.left_flag, 'assets/images/pakistan_flag.png' ],
+     [ $('.flag.right img'), d.right_flag, 'assets/images/indian_flag.png' ]].forEach(([el, value, fallback]) => {
+       if (!el || !value) return;
+       const src = imgPath(value);
+       if (el.getAttribute('src') !== src) {
+         el.onerror = () => { el.onerror = null; el.src = fallback; };
+         el.src = src;
+       }
+     });
+    render();
+    syncAIAnalytics(d, matchChanged);
+    if (matchChanged) { lastMatchId = d.match_id; lastEventSeq = incomingSeq; }
+    else if (newEvent) {
+      const feed = Array.isArray(d.event_feed) ? d.event_feed.filter(item => Number(item.seq) > lastEventSeq) : [];
+      if (feed.length) feed.forEach(item => queueLiveEvent(item.event, item.effects || [], hist, oldOverLength));
+      else queueLiveEvent(d.last_event, d.last_effects || [], hist, oldOverLength);
+      lastEventSeq = incomingSeq;
+    }
+  }
+
+  function aiText(value, limit) {
+    let text = String(value || '').replace(/[`*_>#]/g, '').replace(/\s+/g, ' ').trim();
+    if (/^(as an ai|here is|here are|certainly[,!]|based on the provided data[,!:])/i.test(text)) return '';
+    if (text.length > limit) text = text.slice(0, limit - 1).replace(/\s+\S*$/, '') + '…';
+    return text;
+  }
+  function syncAIAnalytics(matchData, matchChanged) {
+    const panel = $('#aiInsight');
+    if (!panel) return;
+    const report = matchData.ai_analysis;
+    const shouldShow = matchData.ai_analysis_visible === true && report && report.match_id === matchData.match_id;
+    if (!shouldShow) {
+      if (aiWasVisible) {
+        panel.setAttribute('aria-hidden', 'true');
+        gsap.killTweensOf(panel);
+        gsap.killTweensOf('.ai-orb i');
+        gsap.to(panel, { autoAlpha: 0, x: 42, scale: .96, duration: .42, ease: 'power2.in' });
+      }
+      aiWasVisible = false;
+      lastAiSignature = '';
+      return;
+    }
+
+    const signature = String(matchData.match_id) + ':' + JSON.stringify(report);
+    if (signature !== lastAiSignature || matchChanged) {
+      const candidates = [];
+      const chase = report.chase_analysis;
+      if (chase && chase.selected) candidates.push({ tag: 'CHASE ANALYSIS', title: 'CHASE READ', summary: aiText(chase.assessment || chase.summary, 165), points: [
+        aiText([chase.current_run_rate && ('Current rate ' + chase.current_run_rate), chase.required_run_rate && ('Required ' + chase.required_run_rate)].filter(Boolean).join(' · '), 110)
+      ] });
+      const players = report.player_insights;
+      if (players && players.selected) candidates.push({ tag: 'PLAYER INSIGHT', title: 'PLAYER WATCH', summary: aiText(players.summary, 165), points: (players.items || []).slice(0, 2).map(item => aiText([item.title, item.detail].filter(Boolean).join(' · '), 110)) });
+      const turning = report.turning_points;
+      if (turning && turning.selected) candidates.push({ tag: 'TURNING POINTS', title: 'MATCH MOMENTUM', summary: aiText(turning.summary, 165), points: (turning.items || []).slice(0, 2).map(item => aiText([item.over, item.event, item.impact].filter(Boolean).join(' · '), 110)) });
+      const post = report.post_match_report;
+      if (post && post.selected) candidates.push({ tag: 'MATCH REPORT', title: aiText(post.headline, 48) || 'MATCH SUMMARY', summary: aiText(post.summary, 165), points: (post.key_takeaways || []).slice(0, 2).map(item => aiText(item, 110)) });
+      const focus = candidates.find(item => item.summary || item.points.some(Boolean));
+      if (!focus) {
+        matchData.ai_analysis_visible = false;
+        panel.setAttribute('aria-hidden', 'true');
+        gsap.set(panel, { autoAlpha: 0, x: 42, scale: .96 });
+        aiWasVisible = false;
+        return;
+      }
+      set('#aiInsightTag', focus.tag);
+      set('#aiInsightTitle', focus.title);
+      set('#aiInsightSummary', focus.summary);
+      set('#aiInsightTeams', [matchData.team, matchData.opponent].filter(Boolean).join('  v  '));
+      const points = candidates.flatMap(item => item.points.filter(Boolean).map(point => item === focus ? point : item.tag + ' · ' + point)).slice(0, 3);
+      const list = $('#aiInsightPoints');
+      list.replaceChildren();
+      points.forEach(point => { const li = document.createElement('li'); li.textContent = point; list.appendChild(li); });
+      lastAiSignature = signature;
+    }
+
+    panel.setAttribute('aria-hidden', 'false');
+    if (!aiWasVisible) {
+      gsap.killTweensOf(panel);
+      gsap.fromTo(panel, { autoAlpha: 0, x: 64, scale: .92 }, { autoAlpha: 1, x: 0, scale: 1, duration: .78, ease: 'back.out(1.25)' });
+      gsap.fromTo(['#aiInsightTag', '#aiInsightTitle', '#aiInsightSummary', '#aiInsightPoints li'], { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: .48, stagger: .075, delay: .16, ease: 'power3.out' });
+      gsap.fromTo('.ai-orb', { scale: .7, rotation: -25 }, { scale: 1, rotation: 0, duration: .8, ease: 'elastic.out(1,.45)', delay: .18 });
+      gsap.to('.ai-orb i', { scale: 1.25, opacity: .7, duration: .95, repeat: -1, yoyo: true, ease: 'sine.inOut', delay: .8 });
+    }
+    aiWasVisible = true;
+  }
+
+  const adminFxQueue = [];
+  let adminFxBusy = false;
+  function queueLiveEvent(raw, effects, history, oldOverLength) {
+    if (raw === 'sync') return;
+    const wicketEffects = String(raw || '').startsWith('wicket:') && effects.length > 0;
+    if (!wicketEffects) adminFxQueue.push({ type: 'score_event', event: raw, history, oldOverLength });
+    effects.forEach(effect => adminFxQueue.push(effect));
+    playNextAdminFx();
+  }
+  function playNextAdminFx() {
+    if (adminFxBusy || !adminFxQueue.length) return;
+    adminFxBusy = true;
+    const effect = adminFxQueue.shift(), previousTimeline = tl;
+    if (effect.type === 'score_event') playScoringEvent(effect.event, effect.history, effect.oldOverLength);
+    else if (effect.type === 'review') review(effect.result);
+    else if (effect.type === 'dismissal') dismiss(effect.kind, { duck: effect.duck || '', sub: effect.sub || '' });
+    else if (effect.type === 'milestone') milestone(Number(effect.runs), effect);
+    else if (effect.type === 'hat_trick') hatTrick(effect.bowler);
+    const activeTimeline = tl !== previousTimeline ? tl : null;
+    const duration = activeTimeline && activeTimeline.duration ? activeTimeline.duration() : .65;
+    setTimeout(() => { adminFxBusy = false; playNextAdminFx(); }, Math.max(250, duration * 1000 + 180));
+  }
+
+  function playScoringEvent(rawValue, history, oldOverLength) {
+    const raw = String(rawValue || ''), ev = raw.split(':').pop().split('+')[0];
+    if (ev === '6') six(); else if (ev === '4') four(); else if (raw.startsWith('wicket:')) dismiss('bowled');
+    else if (ev === 'wd') wide(true); else if (ev === 'nb') noBall(true); else if (ev === 'lbye' || ev === 'bye') legBye(true);
+    else if (history.length > oldOverLength) {
+      const dot = $('#overBalls .dot:last-child');
+      if (dot) gsap.fromTo(dot, { scale: 0 }, { scale: 1, duration: .5, ease: 'back.out(3)' });
+      gsap.fromTo('#run-wicket', { scale: 1.25 }, { scale: 1, duration: .45, ease: 'back.out(3)' });
+      }
+  }
+
+  function clean(v) { return String(v || '').replace(' (out)', ''); }
+  async function pollAdminScore() {
+    try {
+      const r = await fetch('../admin/get_score.php?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('Score endpoint unavailable');
+      syncFromAdmin(await r.json());
+    } catch (e) { /* Keep the last rendered score during brief network interruptions. */ }
+  }
+  pollAdminScore();
+  setInterval(pollAdminScore, 3000);
 
   /* ---------- Ticker bar ---------- */
   const tText = $('#tickerText');
@@ -276,8 +429,8 @@
   }
 
   /* ---------- WIDE ---------- */
-  function wide() {
-    addBall('wd', true);
+  function wide(silent) {
+    if (!silent) addBall('wd', true);
     reset();
     const g = glyph('↔', 960, 450, 260, '#4aa8ff');
     g.style.textShadow = '0 0 40px rgba(74,168,255,.9)';
@@ -294,8 +447,8 @@
   }
 
   /* ---------- NO BALL + FREE HIT ---------- */
-  function noBall() {
-    addBall('nb', true);
+  function noBall(silent) {
+    if (!silent) addBall('nb', true);
     reset();
     const line = document.createElement('div');
     line.className = 'crease'; fx.appendChild(line);
@@ -313,8 +466,8 @@
   }
 
   /* ---------- LEG BYE / DEAD BALL ---------- */
-  function legBye() {
-    addBall('lb', true);
+  function legBye(silent) {
+    if (!silent) addBall('lb', true);
     reset();
     tl = gsap.timeline({ onComplete: reset });
     tl.set(ball, { x: 260, y: 800, opacity: 1 }, 0)
@@ -469,13 +622,13 @@
   }
 
   /* ---------- HAT-TRICK ---------- */
-  function hatTrick() {
+  function hatTrick(bowlerName) {
     reset();
     tl = gsap.timeline({ onComplete: reset });
     tl.to(flash, { opacity: .5, backgroundColor: '#8a4dff', duration: .1, yoyo: true, repeat: 3 }, 0)
       .add(slam('HAT-TRICK!', '#c58cff', 'rgba(170,110,255,.95)', 'Three in three'), 0)
       .add(() => burst(120, ['#c58cff', '#ffd23f', '#ffffff', '#e31857'], 960, 470, 760, 540), .3)
-      .add(banner({ tag: 'BOWLER', title: state.bowler.name.toUpperCase(), sub: 'THREE WICKETS IN THREE BALLS', color: '#c58cff', icon: '🎩', y: 700, hold: 2.2 }), .7);
+      .add(banner({ tag: 'BOWLER', title: (bowlerName || state.bowler.name).toUpperCase(), sub: 'THREE WICKETS IN THREE BALLS', color: '#c58cff', icon: '🎩', y: 700, hold: 2.2 }), .7);
     [.3, .65, 1.0].forEach(tm => tl.add(() => ring(960, 470, '#c58cff'), tm));
   }
 
