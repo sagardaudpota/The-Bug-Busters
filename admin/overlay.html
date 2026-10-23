@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Match</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#d49a2a; --gold-d:#8a5a12; --orange:#ff7a1a; --red:#b3402a;
+  --navy:#0d1322; --glass:rgba(96,100,108,.86); --green:#2ee59d;
+  --pad:clamp(12px,2vw,24px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#05070d;color:#fff;
+  font-family:"Space Grotesk","Segoe UI",system-ui,sans-serif}
+body.clear{background:transparent}            /* add ?bg=clear to the URL for OBS / transparent use */
+.mono{font-family:"JetBrains Mono",ui-monospace,Consolas,monospace}
+.stage{position:fixed;inset:0}
+
+/* video layer */
+#video{position:absolute;inset:0;background:radial-gradient(circle at 50% 40%,#16233f,#05070d 70%)}
+body.clear #video{display:none}
+#video iframe{width:100%;height:100%;border:0}
+.wait{position:absolute;inset:0;display:grid;place-items:center;color:#5d6b88;
+  font:500 clamp(11px,1.4vw,14px) "JetBrains Mono",monospace;letter-spacing:.2em;text-transform:uppercase}
+
+/* top row */
+.brand,.live{position:absolute;top:var(--pad);display:flex;align-items:center;gap:8px;
+  font:700 clamp(9px,1vw,12px) "JetBrains Mono",monospace;letter-spacing:.14em;text-transform:uppercase;
+  text-shadow:0 1px 6px #000a}
+.brand{left:var(--pad)} .brand i{width:11px;height:11px;border-radius:3px;background:var(--orange)}
+.brand b{color:var(--orange)}
+.live{right:var(--pad);color:#d6ffee}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 1.4s infinite}
+.live.off i{background:#ef4444;box-shadow:none;animation:none}
+@keyframes blink{50%{opacity:.25}}
+
+/* lower third (batsman) */
+.plate{position:absolute;left:var(--pad);bottom:calc(26px + 56px + 58px);background:var(--glass);
+  border-left:3px solid var(--red);padding:10px 16px 9px;min-width:190px;backdrop-filter:blur(6px);
+  box-shadow:0 6px 24px #0006;transition:opacity .3s}
+.plate h3{margin:0;font-size:clamp(14px,1.6vw,19px);letter-spacing:.04em;text-transform:uppercase}
+.plate p{margin:3px 0 0;font:700 clamp(8px,.9vw,10px) "JetBrains Mono",monospace;letter-spacing:.18em;
+  color:var(--orange);text-transform:uppercase}
+.plate p span{color:#aeb4c0}
+
+/* score bar */
+.bar{position:absolute;left:var(--pad);right:var(--pad);bottom:calc(26px + 14px);height:44px;display:flex;
+  background:var(--glass);border-top:2px solid var(--gold);box-shadow:0 0 34px #d49a2a55;backdrop-filter:blur(6px)}
+.tag{display:flex;align-items:center;padding:0 clamp(10px,1.6vw,22px);
+  background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#1b1204;
+  font:700 clamp(8px,.9vw,10px) "JetBrains Mono",monospace;letter-spacing:.22em;white-space:nowrap}
+.mid{flex:1;display:flex;align-items:center;gap:clamp(8px,1.4vw,18px);padding:0 clamp(10px,1.6vw,18px);
+  font-size:clamp(13px,1.7vw,20px);font-weight:700;min-width:0;overflow:hidden;white-space:nowrap}
+.mid img{height:26px;width:auto;border-radius:3px;box-shadow:0 0 0 1px #fff3}
+.mid .sc{font-size:clamp(17px,2.3vw,28px);letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.mid .ov{font:500 clamp(10px,1.1vw,13px) "JetBrains Mono",monospace;color:#d3d7df}
+.mid .vs{font:500 11px "JetBrains Mono",monospace;color:#c3c8d2;letter-spacing:.2em}
+.mid .need{margin-left:auto;font:700 clamp(10px,1.1vw,13px) "JetBrains Mono",monospace;color:#ffe3b0}
+.pop{animation:pop .5s}
+@keyframes pop{0%{transform:scale(1.25);color:#ffd27a}100%{transform:scale(1)}}
+.mark{position:absolute;right:calc(var(--pad) + 8px);bottom:calc(26px + 14px + 52px);display:flex;align-items:center;gap:6px;
+  font:700 9px "JetBrains Mono",monospace;letter-spacing:.16em;text-transform:uppercase;text-shadow:0 1px 6px #000a}
+.mark img{height:20px;width:20px;object-fit:cover;border-radius:50%}
+
+/* bottom ticker */
+.ticker{position:absolute;left:0;right:0;bottom:0;height:26px;background:var(--navy);display:flex;align-items:center;overflow:hidden;
+  font:500 clamp(9px,1vw,11px) "JetBrains Mono",monospace;color:#c6cddb}
+.ticker .l{height:100%;display:flex;align-items:center;gap:6px;padding:0 14px;background:linear-gradient(180deg,var(--gold),var(--gold-d));
+  color:#1b1204;font-weight:700;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;z-index:1}
+.ticker .l img{height:14px;width:14px;border-radius:50%;object-fit:cover}
+.ticker .v{padding:0 12px;color:#7d8aa5;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;border-right:1px solid #25324d;z-index:1;background:var(--navy)}
+.ticker .run{flex:1;overflow:hidden;white-space:nowrap}
+.ticker .run span{display:inline-block;padding-left:100%;animation:scroll 32s linear infinite}
+@keyframes scroll{to{transform:translateX(-100%)}}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- 1. VIDEO: paste your live stream embed URL in STREAM_EMBED_URL (see script) -->
+  <div id="video"><div class="wait">Waiting for live stream</div></div>
+
+  <!-- 2. TOP ROW -->
+  <div class="brand"><i></i><span id="brand">CITY <b>SPORTS</b></span></div>
+  <div class="live" id="live"><i></i><span id="liveTxt">LIVE</span></div>
+
+  <!-- 3. LOWER THIRD: batsman on strike -->
+  <div class="plate" id="plate">
+    <h3 id="pName">-</h3>
+    <p><span id="pSub"></span></p>
+  </div>
+
+  <!-- 4. SCORE BAR -->
+  <div class="mark"><img id="mLogo" alt=""><span id="mTxt"></span></div>
+  <div class="bar">
+    <div class="tag">LIVE SCORE</div>
+    <div class="mid">
+      <img id="fL" alt=""><span id="tTeam">-</span>
+      <span class="sc" id="tScore">0/0</span><span class="ov" id="tOver"></span>
+      <span class="vs">VS</span>
+      <span id="tOpp">-</span><img id="fR" alt="">
+      <span class="need" id="tNeed"></span>
+    </div>
+  </div>
+
+  <!-- 5. BOTTOM TICKER -->
+  <div class="ticker">
+    <div class="l"><img id="tLogo" alt=""><span id="tBrand">LIVE</span></div>
+    <div class="v" id="tVenue">-</div>
+    <div class="run"><span id="tRun">Waiting for match updates</span></div>
+  </div>
+</div>
+
+<script>
+/* ---------- SETTINGS (edit these) ---------- */
+const BRAND_LEFT  = 'CITY';          // top-left brand: "CITY" + orange "SPORTS"
+const BRAND_RIGHT = 'SPORTS';
+const STREAM_EMBED_URL = '';         // e.g. 'https://www.youtube.com/embed/VIDEO_ID?autoplay=1&mute=1'
+const POLL_MS = 2000;
+/* ------------------------------------------- */
+
+const $ = id => document.getElementById(id);
+const clean = n => String(n || '').replace(' (out)', '');
+if (new URLSearchParams(location.search).get('bg') === 'clear') document.body.classList.add('clear');
+
+$('brand').innerHTML = '';
+$('brand').append(BRAND_LEFT + ' ');
+const bb = document.createElement('b'); bb.textContent = BRAND_RIGHT; $('brand').appendChild(bb);
+
+if (STREAM_EMBED_URL) {
+  const f = document.createElement('iframe');
+  f.src = STREAM_EMBED_URL; f.allow = 'autoplay; fullscreen; picture-in-picture'; f.allowFullscreen = true;
+  $('video').innerHTML = ''; $('video').appendChild(f);
+}
+
+function setImg(el, src) {
+  if (src) { el.src = src; el.style.display = ''; } else { el.style.display = 'none'; }
+  el.onerror = () => el.style.display = 'none';
+}
+function ballsOf(o) { const d = Math.floor(o); return d * 6 + Math.round((o - d) * 10); }
+function flash(el, val) { if (el.textContent !== val) { el.textContent = val; el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); } }
+
+function render(d) {
+  const b = ballsOf(d.over);
+  flash($('tScore'), d.team_runs + '/' + d.team_wickets);
+  $('tTeam').textContent = d.team; $('tOpp').textContent = d.opponent;
+  $('tOver').textContent = '(' + Number(d.over).toFixed(1) + ' / ' + d.max_overs + ')';
+  setImg($('fL'), d.left_flag); setImg($('fR'), d.right_flag);
+  setImg($('mLogo'), d.logo); setImg($('tLogo'), d.logo);
+  $('mTxt').textContent = d.team + ' v ' + d.opponent;
+  $('tBrand').textContent = d.team;
+  $('tVenue').textContent = d.match_info || 'Live';
+
+  // target / need
+  let need = '';
+  if (d.target > 0) {
+    const n = d.target - d.team_runs, left = d.max_overs * 6 - b;
+    need = n > 0 ? 'NEED ' + n + ' FROM ' + left : 'TARGET REACHED';
+  }
+  $('tNeed').textContent = need;
+
+  // lower third: striker
+  $('pName').textContent = clean(d.striker) + ' *';
+  $('pSub').textContent = d.striker_runs + ' (' + d.striker_balls + ')  |  ' + clean(d.non_striker) + ' ' + d.non_striker_runs + ' (' + d.non_striker_balls + ')  |  ' + d.bowler;
+
+  // ticker text
+  const crr = b ? (d.team_runs / (b / 6)).toFixed(2) : '0.00';
+  const hist = (d.ball_history || []).join(' \u00b7 ') || 'new over';
+  $('tRun').textContent = 'THIS OVER: ' + hist + '   \u2022   RUN RATE ' + crr +
+    (need ? '   \u2022   ' + need : '') + '   \u2022   BOWLER ' + d.bowler + '   \u2022   ' + d.team + ' ' + d.team_runs + '/' + d.team_wickets;
+}
+
+async function poll() {
+  try {
+    const r = await fetch('get_score.php?_=' + Date.now(), { cache: 'no-store' });
+    render(await r.json());
+    $('live').className = 'live'; $('liveTxt').textContent = 'LIVE';
+  } catch (e) { $('live').className = 'live off'; $('liveTxt').textContent = 'RECONNECTING'; }
+}
+poll(); setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
