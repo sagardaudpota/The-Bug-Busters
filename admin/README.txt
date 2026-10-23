@@ -7,16 +7,20 @@ SCORE PANEL - SETUP
 INCLUDED
   scorer_panel.html  control panel (scoring, match, branding, AI Analytics tabs)
   update_score.php   writes the score (rewritten: locking, safe undo, safe uploads, no key)
-  get_score.php      reads the score (your original, unchanged)
-  score_data.json    starter data copied from your PAK vs IND output
+  get_score.php      reads the currently selected match
+  matches/           one JSON file per match plus active_match.json
   overlay.html       demo overlay (optional)
   uploads/ images/   upload folders (uploads is PHP-protected)
 
 NOT INCLUDED - copy these yourself
   your overlay: index.php + index_*.php + style*.css      (from bug_buster_old)
   your pictures: contents of bug_buster_old/images and bug_buster_old/uploads
-                 (score_data.json points at uploads/1741681899_... logo and flag files)
+                 (match_1.json initially copies api_development/score_data.json)
   AI tab: ai_reports.php and match_record.json            (from your friend)
 
-Created automatically on first score tap: score.lock, score_undo.json
+Match files are created in matches/ (match_1.json, match_2.json, ...).
+active_match.json contains the match_id used by the admin and frontend.
+Use the Match & players tab to create a match or switch to an existing match.
+Undo snapshots are stored per match beside each match JSON.
+Created automatically on first score tap: score.lock
 Do NOT copy: config.php, test_form.html, scorer.html, old admin.php

@@ -6,8 +6,8 @@
 
 header('Content-Type: text/plain; charset=utf-8');
 
-const JSON_FILE = __DIR__ . '/score_data.json';
-const UNDO_FILE = __DIR__ . '/score_undo.json';   // undo snapshots (kept out of the public score file)
+const MATCHES_DIR = __DIR__ . '/matches';
+const ACTIVE_FILE = MATCHES_DIR . '/active_match.json';
 const LOCK_FILE = __DIR__ . '/score.lock';
 const UNDO_LIMIT = 60;
 
@@ -36,8 +36,17 @@ function readJson($file, $fallback) {
     return is_array($d) ? $d : $fallback;
 }
 
+function activeMatchId() {
+    $active = readJson(ACTIVE_FILE, ['match_id' => 'match_1']);
+    $id = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)($active['match_id'] ?? 'match_1'));
+    return $id !== '' ? $id : 'match_1';
+}
+function matchFile($id) { return MATCHES_DIR . '/' . $id . '.json'; }
+function undoFile($id) { return MATCHES_DIR . '/' . $id . '_undo.json'; }
 function saveOrFail($data, $okMsg, $failMsg) {
-    if (writeJson(JSON_FILE, $data)) respond(200, $okMsg);
+    $data['revision'] = (int)($data['revision'] ?? 0) + 1;
+    $data['updated_at'] = gmdate('c');
+    if (writeJson(matchFile(activeMatchId()), $data)) respond(200, $okMsg);
     respond(500, $failMsg);
 }
 
@@ -59,14 +68,15 @@ function snapshot($data) {
 }
 
 function pushUndo($data) {
-    $stack = readJson(UNDO_FILE, []);
+    $file = undoFile(activeMatchId());
+    $stack = readJson($file, []);
     $stack[] = snapshot($data);
     if (count($stack) > UNDO_LIMIT) $stack = array_slice($stack, -UNDO_LIMIT);
-    writeJson(UNDO_FILE, $stack);
+    writeJson($file, $stack);
 }
 
 function clearUndo() {
-    writeJson(UNDO_FILE, []);
+    writeJson(undoFile(activeMatchId()), []);
 }
 
 function parseEvent($raw) {
@@ -131,15 +141,43 @@ $defaultData = [
 ];
 
 // ---------------------------------------------------------------- request gate
+if (!is_dir(MATCHES_DIR)) mkdir(MATCHES_DIR, 0755, true);
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') respond(405, "POST only.");
 
 // Lock: held until the script ends, so every read-modify-write is serialized.
 $lock = fopen(LOCK_FILE, 'c');
 if (!$lock || !flock($lock, LOCK_EX)) respond(500, "Could not lock score file.");
 
-$data = readJson(JSON_FILE, $defaultData);
+$activeId = activeMatchId();
+$data = readJson(matchFile($activeId), $defaultData);
 $data = array_merge($defaultData, $data);   // fill any missing keys
 
+// Match management: a new match starts from clean defaults; selecting an existing
+// match only switches the active pointer and does not modify its score.
+if (($_POST['list_matches'] ?? '') === '1') {
+    $items = [];
+    foreach (glob(MATCHES_DIR . '/match_*.json') ?: [] as $file) {
+        if (preg_match('/^(match_[0-9]+)\.json$/', basename($file), $m)) {
+            $d = readJson($file, []);
+            $items[] = ['id' => $m[1], 'team' => $d['team'] ?? '', 'opponent' => $d['opponent'] ?? '', 'updated_at' => $d['updated_at'] ?? ''];
+        }
+    }
+    header('Content-Type: application/json'); echo json_encode(['active' => $activeId, 'matches' => $items]); exit;
+}
+if (($_POST['create_match'] ?? '') === '1') {
+    $ids = [];
+    foreach (glob(MATCHES_DIR . '/match_*.json') ?: [] as $file) if (preg_match('/^match_([0-9]+)\.json$/', basename($file), $m)) $ids[] = (int)$m[1];
+    $newId = 'match_' . (max($ids ?: [0]) + 1);
+    $fresh = $defaultData; $fresh['revision'] = 1; $fresh['updated_at'] = gmdate('c');
+    if (!writeJson(matchFile($newId), $fresh) || !writeJson(ACTIVE_FILE, ['match_id' => $newId])) respond(500, 'Could not create match.');
+    writeJson(undoFile($newId), []); respond(200, 'Created and selected ' . $newId . '.');
+}
+if (isset($_POST['select_match'])) {
+    $id = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)$_POST['select_match']);
+    if (!preg_match('/^match_[0-9]+$/', $id) || !is_file(matchFile($id))) respond(404, 'Match not found.');
+    if (!writeJson(ACTIVE_FILE, ['match_id' => $id])) respond(500, 'Could not select match.');
+    respond(200, 'Selected ' . $id . '.');
+}
 // ---------------------------------------------------------------- clear
 if (($_POST['clear'] ?? '') === '1') {
     $fresh = $defaultData;
@@ -305,7 +343,8 @@ if (isset($_POST['live_event'])) {
     }
 
     $data['ball_history'][] = ["display" => $display, "full" => $raw];
-
+    $data['event_seq'] = (int)($data['event_seq'] ?? 0) + 1;
+    $data['last_event'] = $raw;
     // Over finished: clear the on-screen "this over" strip (undo still restores it).
     if ($legal && oversToBalls($data['over']) % 6 === 0) {
         $data['ball_history'] = [];

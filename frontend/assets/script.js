@@ -52,6 +52,7 @@
     ],
     tickIdx: 0
   };
+  let lastMatchId = null, lastEventSeq = null;
   const q = new URLSearchParams(location.search);
   if (q.get('opp')) state.teamB = q.get('opp').toUpperCase();
   if (q.get('ticker')) state.ticker.unshift(['INFO', q.get('ticker')]);
@@ -101,6 +102,65 @@
       }
     }
   }
+
+  // The scorer panel is the source of truth. Polling updates the display in place;
+  // only a newly committed scoring event starts an effect, so reconnects never replay it.
+  function syncFromAdmin(d) {
+    const matchChanged = lastMatchId !== d.match_id;
+    const incomingSeq = Number(d.event_seq || 0);
+    const newEvent = !matchChanged && lastEventSeq !== null && incomingSeq > lastEventSeq;
+    const oldOverLength = state.over.length;
+    const hist = Array.isArray(d.ball_history) ? d.ball_history.map(x => String(x)) : [];
+    const ov = Number(d.over || 0), whole = Math.floor(ov);
+    Object.assign(state, {
+      teamA: d.team || '', teamB: d.opponent || '', runs: Number(d.team_runs || 0),
+      wickets: Number(d.team_wickets || 0), overs: whole, balls: Math.round((ov - whole) * 10),
+      venue: d.match_info || '', striker: { name: clean(d.striker), r: Number(d.striker_runs || 0), b: Number(d.striker_balls || 0) },
+      non: { name: clean(d.non_striker), r: Number(d.non_striker_runs || 0), b: Number(d.non_striker_balls || 0) },
+      bowler: { name: d.bowler || '', fig: '' }, over: hist,
+      need: Math.max(0, Number(d.target || 0) - Number(d.team_runs || 0)),
+      needBalls: Math.max(0, Number(d.max_overs || 0) * 6 - (whole * 6 + Math.round((ov - whole) * 10)))
+    });
+    const imgPath = p => p ? (String(p).startsWith('http') || String(p).startsWith('/') ? p : '../admin/' + p) : '';
+    [[ $('#logo img'), d.logo, 'assets/images/logo.png' ],
+     [ $('.flag.left img'), d.left_flag, 'assets/images/pakistan_flag.png' ],
+     [ $('.flag.right img'), d.right_flag, 'assets/images/indian_flag.png' ]].forEach(([el, value, fallback]) => {
+       if (!el || !value) return;
+       const src = imgPath(value);
+       if (el.getAttribute('src') !== src) {
+         el.onerror = () => { el.onerror = null; el.src = fallback; };
+         el.src = src;
+       }
+     });
+    render();
+    if (matchChanged) { lastMatchId = d.match_id; lastEventSeq = incomingSeq; }
+    else if (newEvent) {
+      playScoringEvent(d.last_event, hist, oldOverLength);
+      lastEventSeq = incomingSeq;
+    }
+  }
+
+  function playScoringEvent(rawValue, history, oldOverLength) {
+    const raw = String(rawValue || ''), ev = raw.split(':').pop().split('+')[0];
+    if (ev === '6') six(); else if (ev === '4') four(); else if (raw.startsWith('wicket:')) dismiss('bowled');
+    else if (ev === 'wd') wide(true); else if (ev === 'nb') noBall(true); else if (ev === 'lbye' || ev === 'bye') legBye(true);
+    else if (history.length > oldOverLength) {
+      const dot = $('#overBalls .dot:last-child');
+      if (dot) gsap.fromTo(dot, { scale: 0 }, { scale: 1, duration: .5, ease: 'back.out(3)' });
+      gsap.fromTo('#run-wicket', { scale: 1.25 }, { scale: 1, duration: .45, ease: 'back.out(3)' });
+      }
+  }
+
+  function clean(v) { return String(v || '').replace(' (out)', ''); }
+  async function pollAdminScore() {
+    try {
+      const r = await fetch('../admin/get_score.php?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('Score endpoint unavailable');
+      syncFromAdmin(await r.json());
+    } catch (e) { /* Keep the last rendered score during brief network interruptions. */ }
+  }
+  pollAdminScore();
+  setInterval(pollAdminScore, 3000);
 
   /* ---------- Ticker bar ---------- */
   const tText = $('#tickerText');
@@ -276,8 +336,8 @@
   }
 
   /* ---------- WIDE ---------- */
-  function wide() {
-    addBall('wd', true);
+  function wide(silent) {
+    if (!silent) addBall('wd', true);
     reset();
     const g = glyph('↔', 960, 450, 260, '#4aa8ff');
     g.style.textShadow = '0 0 40px rgba(74,168,255,.9)';
@@ -294,8 +354,8 @@
   }
 
   /* ---------- NO BALL + FREE HIT ---------- */
-  function noBall() {
-    addBall('nb', true);
+  function noBall(silent) {
+    if (!silent) addBall('nb', true);
     reset();
     const line = document.createElement('div');
     line.className = 'crease'; fx.appendChild(line);
@@ -313,8 +373,8 @@
   }
 
   /* ---------- LEG BYE / DEAD BALL ---------- */
-  function legBye() {
-    addBall('lb', true);
+  function legBye(silent) {
+    if (!silent) addBall('lb', true);
     reset();
     tl = gsap.timeline({ onComplete: reset });
     tl.set(ball, { x: 260, y: 800, opacity: 1 }, 0)

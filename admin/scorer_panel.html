@@ -138,9 +138,12 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
         <button class="ghost" id="bUndo">&#8630; Undo</button><button class="ghost" id="bSwap">&#8646; Swap strike</button><button class="ghost" id="bInn">End innings</button>
       </div>
     </div>
-
     </section>
     <section data-tab="match">
+    <div class="panel hl"><p class="pt">Matches <b id="activeMatch">match_1</b></p>
+      <label>Open existing match</label><select id="matchSelect" style="width:100%;background:#0a0a0c;border:1px solid var(--line);border-radius:8px;padding:11px 12px;color:var(--txt)"></select>
+      <div class="row2"><button class="ghost" id="bSelectMatch" style="margin-top:10px">Open selected</button><button class="go" id="bNewMatch">New match</button></div>
+    </div>
     <div class="panel"><p class="pt">Broadcast theme</p>
       <div class="themes" id="themes">
         <div class="th" data-d="green"><i style="background:linear-gradient(135deg,#0f5132,#22c55e)"></i>Green</div>
@@ -245,6 +248,17 @@ async function refresh(){
   catch(e){$('dot').className='dot off';$('liveTxt').textContent='OFFLINE';$('cConn').textContent='\u2022 OFFLINE'}
 }
 setInterval(()=>{if(!busy)refresh()},3000);
+async function loadMatches(){
+  try{
+    const r=await fetch(API,{method:'POST',body:new URLSearchParams({list_matches:'1'})});
+    const d=await r.json(); const select=$('matchSelect'); select.innerHTML='';
+    d.matches.forEach(m=>{const o=document.createElement('option');o.value=m.id;o.textContent=m.id+' · '+(m.team||'TeamA')+' vs '+(m.opponent||'TeamB');select.appendChild(o)});
+    select.value=d.active; $('activeMatch').textContent=d.active;
+  }catch(e){toast('Could not load matches',false)}
+}
+$('bNewMatch').onclick=async()=>{const r=await fetch(API,{method:'POST',body:new URLSearchParams({create_match:'1'})});toast(await r.text(),r.ok);await loadMatches();filled=false;await refresh()};
+$('bSelectMatch').onclick=async()=>{const r=await fetch(API,{method:'POST',body:new URLSearchParams({select_match:$('matchSelect').value})});toast(await r.text(),r.ok);await loadMatches();filled=false;await refresh()};
+loadMatches();
 
 /* ---------- sheets ---------- */
 const openSheet=h=>{$('sheet').innerHTML=h;$('veil').classList.add('open')};
