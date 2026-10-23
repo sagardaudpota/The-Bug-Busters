@@ -159,7 +159,7 @@ html, body {
 }
 .bat {
   display: grid;
-  grid-template-columns: 22px 1fr 56px 40px;
+  grid-template-columns: 22px 1fr 56px 52px;
   align-items: baseline;
   color: var(--ink);
   font-size: 30px; font-weight: 700; letter-spacing: .5px;
@@ -171,7 +171,7 @@ html, body {
 .bat.on .mark { border-left-color: var(--crimson); }
 .bat .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bat .r { text-align: right; font-size: 34px; }
-.bat .b { text-align: right; font-size: 20px; font-weight: 600; opacity: .65; }
+.bat .b { text-align: right; font-size: 28px; font-weight: 700; opacity: .9; padding-left: 8px; }
 .bat:not(.on) .name, .bat:not(.on) .r { opacity: .75; }
 
 /* Score capsule */
@@ -279,3 +279,74 @@ html, body {
 
 body.wicket-mode .board { animation: shake .5s; }
 @keyframes shake { 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)} }
+
+/* =========================================================
+   EXTRA ANIMATIONS: banners, milestones, DRS, free hit, legend
+   ========================================================= */
+.bn {
+  position: absolute; left: 50%; top: 0;
+  min-width: 700px; padding: 12px 56px 14px 44px;
+  border-radius: 20px; overflow: hidden; text-align: center; color: #fff;
+  background: linear-gradient(135deg, rgba(10,13,60,.97), rgba(30,33,111,.97));
+  box-shadow: 0 16px 38px rgba(0,0,0,.55), inset 0 0 0 2px color-mix(in srgb, var(--c) 65%, transparent);
+}
+.bn::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 14px; background: var(--c); }
+.bn::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 160px; left: -200px;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,.28), transparent);
+  animation: sheen 1.6s .4s ease-out forwards;
+}
+@keyframes sheen { to { left: 110%; } }
+.bn-tag { font-size: 20px; font-weight: 700; letter-spacing: 7px; color: var(--c); text-transform: uppercase; }
+.bn-main { display: flex; align-items: center; justify-content: center; gap: 20px; }
+.bn-ico { font-size: 64px; line-height: 1; color: var(--c); font-weight: 800; }
+.bn-title { font-size: 88px; font-weight: 800; line-height: 1; letter-spacing: 6px; text-shadow: 0 0 30px var(--c); }
+.bn-sub { margin-top: 2px; font-size: 26px; font-weight: 600; letter-spacing: 5px; opacity: .85; text-transform: uppercase; }
+
+.hand { position: absolute; left: 0; top: 0; line-height: 1; font-weight: 800; }
+.crease { position: absolute; left: 0; top: 0; width: 700px; height: 8px; border-radius: 4px; background: #fff; box-shadow: 0 0 20px rgba(255,255,255,.8); }
+.pad { position: absolute; left: 0; top: 0; width: 90px; height: 170px; border-radius: 34px; background: rgba(255,255,255,.2); border: 4px solid #ff4b7d; }
+.dline { position: absolute; left: 0; top: 0; width: 290px; height: 0; border-top: 6px dashed #ff4b7d; filter: drop-shadow(0 0 8px #ff4b7d); }
+
+/* Free hit badge */
+.freehit {
+  position: absolute; top: -62px; right: 70px;
+  padding: 6px 26px 4px; border-radius: 40px;
+  font-size: 30px; font-weight: 800; letter-spacing: 7px; color: #3a2a00;
+  background: linear-gradient(#ffe27a, #ffb800);
+  box-shadow: 0 0 24px 4px rgba(255,210,63,.8);
+}
+
+/* Milestone card */
+.mile { position: absolute; left: 50%; top: 250px; width: 900px; text-align: center; color: #fff; }
+.mile-rays {
+  position: absolute; left: 50%; top: 210px; width: 1000px; height: 1000px; margin: -500px 0 0 -500px;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--c) 55%, transparent) 0 7deg, transparent 7deg 20deg);
+  -webkit-mask-image: radial-gradient(circle, #000 5%, transparent 62%);
+  mask-image: radial-gradient(circle, #000 5%, transparent 62%);
+  opacity: .75;
+}
+.mile > *:not(.mile-rays) { position: relative; }
+.mile-bat { font-size: 90px; line-height: 1; }
+.mile-num { font-size: 270px; font-weight: 800; line-height: .95; color: var(--c); -webkit-text-stroke: 3px rgba(0,0,0,.35); text-shadow: 0 0 50px var(--c), 0 10px 0 rgba(0,0,0,.35); }
+.mile-l { font-size: 76px; font-weight: 800; letter-spacing: 16px; text-shadow: 0 6px 18px rgba(0,0,0,.6); }
+.mile-n { margin-top: 6px; font-size: 44px; font-weight: 700; letter-spacing: 6px; text-transform: uppercase; color: var(--c); }
+.mile-s { font-size: 28px; font-weight: 600; letter-spacing: 6px; opacity: .85; }
+
+/* DRS review */
+.drs { position: absolute; left: 50%; top: 470px; width: 520px; height: 420px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; text-align: center; }
+.drs-ring { position: absolute; left: 50%; top: 50%; width: 400px; height: 400px; margin: -200px 0 0 -200px; border-radius: 50%; border: 12px solid rgba(255,255,255,.14); border-top-color: var(--c); border-right-color: var(--c); filter: drop-shadow(0 0 16px var(--c)); }
+.drs-t { position: relative; font-size: 120px; font-weight: 800; line-height: 1; letter-spacing: 6px; text-shadow: 0 0 40px var(--c), 0 8px 0 rgba(0,0,0,.35); }
+.drs-s { position: relative; margin-top: 6px; font-size: 24px; font-weight: 600; letter-spacing: 6px; opacity: .85; }
+
+/* Key legend (toggle with "/") */
+.legend {
+  position: absolute; top: 28px; right: 28px; z-index: 400; width: 330px;
+  padding: 16px 22px 14px; border-radius: 16px; color: #fff;
+  background: rgba(8,10,38,.92); box-shadow: 0 10px 30px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,255,255,.15);
+  display: grid; row-gap: 5px; font-size: 22px;
+}
+.legend h4 { margin: 0 0 4px; font-size: 20px; letter-spacing: 6px; color: var(--gold); }
+.legend div { display: flex; align-items: center; gap: 14px; }
+.legend kbd { display: inline-grid; place-items: center; min-width: 30px; height: 28px; padding: 0 6px; border-radius: 7px; background: #fff; color: var(--ink); font: 800 18px 'Barlow Condensed', sans-serif; }
+.legend .lg-foot { margin-top: 6px; opacity: .7; }
