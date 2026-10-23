@@ -5,59 +5,71 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Score Panel | Blue</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/style.css">
 </head>
 
-<body class="theme-blue">
-    <!-- Animation Container -->
-    <div id="animationContainer">
-        <div id="ball"></div>
-        <div id="animText">SIXER!</div>
-        <div id="confettiContainer"></div>
-    </div>
+<body class="theme-blue" data-mode="live">
+    <div id="stage">
 
-    <div id="logo">
-        <img src="assets/images/logo.png" alt="Logo">
-    </div>
-
-    <div class="panel">
-        <div class="p-left">
-            <img src="assets/images/pakistan_flag.png" alt="Left Flag">
+        <!-- Effects layer -->
+        <div id="fx">
+            <div id="flash"></div>
+            <div id="shadow"></div>
+            <div id="ball"></div>
+            <div id="animText">SIXER!</div>
+            <div id="sub"></div>
         </div>
-        <div class="p-mid">
-            <div class="players">
-                <p>Striker</p>
-                <p>Non-Striker</p>
+
+        <div id="logo">
+            <img src="assets/images/logo.png" alt="Logo">
+        </div>
+
+        <div class="dock">
+            <!-- Placeholder text bar -->
+            <div class="ticker">
+                <div class="ticker-tag"><i></i>LIVE</div>
+                <div class="ticker-view"><div class="ticker-text" id="tickerText">Placeholder text</div></div>
+                <div class="ticker-meta"><span id="teamA">PAK</span>&nbsp;v&nbsp;<span id="opponent">IND</span></div>
             </div>
-            <div class="run">
-                <p><b>12 <small>2</small></b></p>
-                <p><b>0 <small>0</small></b></p>
-            </div>
-            <div class="ining">
-                <p>
-                    PAK v <span id="opponent">IND</span>
-                    <span id="run-wicket">12-0</span>
-                    <span id="p2">P2</span>
-                    <span id="over">0.2</span>
-                    <span id="match">Marhaba Stadium</span>
-                </p>
-            </div>
-            <div class="balls">
-                <p class="bowler">Shafi</p>
-                <div class="move">
-                    <div class="circle">6</div>
-                    <div class="circle">6</div>
-                    <div class="circle"></div>
-                    <div class="circle"></div>
-                    <div class="circle"></div>
-                    <div class="circle"></div>
+
+            <!-- Score card -->
+            <div class="board">
+                <div class="flag left">
+                    <img src="assets/images/pakistan_flag.png" alt="Left Flag">
+                </div>
+
+                <div class="core">
+                    <div class="batters">
+                        <div class="bat on"><span class="mark"></span><span class="name" id="sName">Striker</span><span class="r" id="sRuns">12</span><span class="b" id="sBalls">2</span></div>
+                        <div class="bat"><span class="mark"></span><span class="name" id="nName">Non-Striker</span><span class="r" id="nRuns">0</span><span class="b" id="nBalls">0</span></div>
+                    </div>
+
+                    <div class="score">
+                        <div class="teams">PAK <em>v</em> <span id="opponent2">IND</span></div>
+                        <div class="main">
+                            <span id="run-wicket">12-0</span>
+                            <span id="p2">P2</span>
+                            <span id="over">0.2</span>
+                        </div>
+                        <div id="match">Marhaba Stadium</div>
+                    </div>
+
+                    <div class="live">
+                        <div class="bowler-row"><span id="bowlerName">Shafi</span><small id="bowlerFig">0-12</small></div>
+                        <div class="over-balls" id="overBalls"></div>
+                    </div>
+                </div>
+
+                <div class="flag right">
+                    <img src="assets/images/indian_flag.png" alt="Right Flag">
                 </div>
             </div>
         </div>
-        <div class="p-right">
-            <img src="assets/images/indian_flag.png" alt="Right Flag">
-        </div>
     </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="assets/script.js"></script>
 </body>
 
