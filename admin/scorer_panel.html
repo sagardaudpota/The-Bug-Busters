@@ -180,7 +180,7 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
   </section>
     <section data-tab="ai">
       <div class="panel hl"><p class="pt">AI Analytics <b>Powered by DeepSeek</b></p>
-        <div class="mt" style="margin-bottom:12px">Choose the analysis you want. The server sends <code style="color:var(--or2)">match_record.json</code> to DeepSeek.</div>
+        <div class="mt" style="margin-bottom:12px">Choose a report to analyze the currently selected match using its saved match JSON.</div>
         <div class="row2">
           <label class="chk"><input type="checkbox" class="aiOpt" value="player_insights">Player insights</label>
           <label class="chk"><input type="checkbox" class="aiOpt" value="turning_points">Turning points</label>
@@ -198,7 +198,7 @@ input[type=file]{width:100%;font-size:11px;color:var(--mut)}
 
 <script>
 const API='update_score.php', GET='get_score.php';
-const AI_ENDPOINT='ai_reports.php';   // your friend's server file that calls DeepSeek (API key stays on the server)
+const AI_ENDPOINT='ai_reports.php';   // same-origin PHP endpoint; the API key stays on the server
 let S={}, busy=false, filled=false, theme='green';
 const $=id=>document.getElementById(id);
 const clean=n=>String(n||'').replace(' (out)','');
@@ -322,25 +322,31 @@ show(location.hash.slice(1)||'score');
 
 /* ---------- AI analytics ---------- */
 const AI_TITLES={player_insights:'Player insights',turning_points:'Turning points',chase_analysis:'Chase analysis',post_match_report:'Post-match report'};
-function aiCard(title,text){
+function aiCard(title,report,key){
+  if(!report||!report.selected)return;
   const d=document.createElement('div');d.className='rep';
-  const h=document.createElement('h4');h.textContent=title;const p=document.createElement('pre');p.textContent=text;
-  d.append(h,p);$('aiOut').appendChild(d);
+  const h=document.createElement('h4');h.textContent=title;d.append(h);
+  const add=(text,tag='p')=>{if(!text)return;const e=document.createElement(tag);e.textContent=text;d.append(e)};
+  if(report.headline)add(report.headline,'strong');
+  add(report.summary);
+  if(key==='chase_analysis'){
+    add('Current run rate: '+(report.current_run_rate||'—')+' · Required run rate: '+(report.required_run_rate||'—'));
+    add(report.assessment);
+  }
+  const items=key==='post_match_report'?report.key_takeaways:report.items;
+  if(Array.isArray(items)&&items.length){const ul=document.createElement('ul');items.forEach(item=>{const li=document.createElement('li');li.textContent=typeof item==='string'?item:[item.title||item.over||item.event,item.detail,item.impact].filter(Boolean).join(': ');ul.append(li)});d.append(ul)}
+  $('aiOut').appendChild(d);
 }
 async function genAI(){
   const picks=[...document.querySelectorAll('.aiOpt:checked')].map(c=>c.value);
   if(!picks.length)return toast('Choose at least one report',false);
   const btn=$('bAI');btn.disabled=true;$('aiStat').textContent='Generating\u2026';$('aiOut').innerHTML='';
   try{
-    const body=new URLSearchParams();picks.forEach(p=>body.append('reports[]',p));
-    const r=await fetch(AI_ENDPOINT,{method:'POST',body});const txt=await r.text();
-    if(!r.ok)throw new Error('Server returned '+r.status);
-    let j=null;try{j=JSON.parse(txt)}catch(e){}
-    const reps=j&&(j.reports||j);
-    if(reps&&typeof reps==='object'){
-      picks.forEach(k=>{if(reps[k]!==undefined)aiCard(AI_TITLES[k],typeof reps[k]==='string'?reps[k]:JSON.stringify(reps[k],null,2))});
-      if(!$('aiOut').children.length)aiCard('AI response',JSON.stringify(reps,null,2));
-    }else aiCard('AI response',txt);
+    const r=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reports:picks})});
+    const data=await r.json();if(!r.ok)throw new Error(data.error||'Server returned '+r.status);
+    $('aiOut').dataset.matchId=data.match_id||'';
+    const match=document.createElement('div');match.className='mt';match.textContent='Analyzed match: '+(data.match_id||'active match');$('aiOut').appendChild(match);
+    picks.forEach(k=>aiCard(AI_TITLES[k],data[k],k));
     $('aiStat').textContent='Reports ready.';
   }catch(e){$('aiStat').textContent='Failed: '+e.message;toast('AI request failed',false)}
   finally{btn.disabled=false}
